@@ -138,6 +138,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(ROOT / "train/data/questions_v2/calc_v2.jsonl"))
     ap.add_argument("--seed", type=int, default=2026)
+    ap.add_argument("--prefix", default="calc2", help="id prefix, so several seeds can be generated without id clashes")
     a = ap.parse_args()
     rng = random.Random(a.seed)
     out, seen = [], set()
@@ -155,7 +156,7 @@ def main() -> int:
                 continue
             seen.add(q)
             made += 1
-            out.append({"id": f"calc2-{name}-{made}", "question": q, "type": "numeric", "topic": name,
+            out.append({"id": f"{a.prefix}-{name}-{made}", "question": q, "type": "numeric", "topic": name,
                         "gold_answer": "; ".join(f"{g:.4f}" for g in gold), "source": f"calc_v2:{name}", "synthetic": True})
     Path(a.out).write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in out), encoding="utf-8")
     print(f"{len(out)} questions -> {a.out}")
