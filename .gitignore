@@ -13,6 +13,7 @@ bench/screenshots/
 # Fine-tune artifacts
 train/data/
 train/out/
+train/out_v2/
 *.gguf
 *.safetensors
 bench/sheets/
