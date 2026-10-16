@@ -63,6 +63,7 @@ textarea { flex: 1; border: 0; outline: 0; resize: none; font: inherit; backgrou
   color: var(--muted); cursor: pointer; }
 .linkbtn:hover { color: var(--accent); }
 .reportform { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; margin-top: 6px; }
+.reportform input { flex: 1 1 100%; border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; background: var(--card); }
 .reportform textarea { flex: 1 1 260px; border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px; font: inherit; font-size: 13px;
   background: var(--card); resize: vertical; }
 .reportform .chip { font-size: 12.5px; padding: 6px 14px; }

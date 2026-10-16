@@ -165,11 +165,12 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
 - Every answer, on the public site and the Mac app, has a **Report a problem** link with an optional note (up to 1,000 characters).
 - **The server saves its own copy of the conversation** up to the reported answer: the questions as the model saw them (after redaction), the answers, the tool calls with inputs and outputs, the sources, the review result, the model and the latency.
   - It does not trust text sent by the browser.
-  - It stores nothing about the visitor (no IP address).
+  - It stores nothing about the visitor (no IP address) except an optional name they choose to type (up to 80 characters). A blank name is saved as "anonymous".
 - Reports are appended to `results/reports/reports.jsonl` (git-ignored) on the machine that runs the API. `scripts/show_reports.py` lists them for triage.
 - On the GPU box, reports must be downloaded before the instance is terminated (`deploy/README.md`).
 - Limits: the same per-visitor rate limit as chat, and only answers from the last 25 turns of a live conversation can be reported.
-- **Storage cap: 5 GB** (`FINBOT_REPORTS_MAX_BYTES`, default 5 GiB). A report that would push `reports.jsonl` past the cap is refused, and no further reports are accepted. The API returns HTTP 507 with "Report storage is full, so reports are paused." Saved reports are never deleted or truncated automatically.
+- **Per-report cap: 2 MB** (`FINBOT_REPORT_MAX_BYTES`). A larger report is trimmed, not refused: it drops the oldest turns first, then tool outputs, then shortens long answers. It is marked `"trimmed": true`, and the reported answer is always kept.
+- **Storage cap for all reports combined: 5 GB** (`FINBOT_REPORTS_MAX_BYTES`, default 5 GiB). A report that would push `reports.jsonl` past the cap is refused, and no further reports are accepted. The API returns HTTP 507 with "Report storage is full, so reports are paused." Saved reports are never deleted or truncated automatically.
 
 ## 8. Benchmark harness (`bench/`)
 - `questions.yaml` covers 8 base questions × 3 personas (novice, greedy-literate, anxious saver) × 3 framings (neutral, eager, leading). Member 2 owns its content.
@@ -221,3 +222,5 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
 - 2026-10-16: Added the private McGraw course set (34 problems) as a test-only evaluation, and the 20-problem held-out set. Fine-tune data is about 900 teacher transcripts from Qwen3.6-27B on the A100.
 - 2026-10-16: Fixed a routing bug. "eli5" contains a digit, so an NPV *explanation* request was forced through the NPV calculator, and the model invented a project to satisfy it. Calculation routing now needs a real quantity (₹, %, lakh/crore/k, a decimal, or a number of 2+ digits), and the prompt says to explain concepts in plain words and to label any worked example as made up. Added section 7.3 (Report a problem).
 - 2026-10-16: The user set a 5 GB cap on stored reports. After the cap, no more reports are accepted.
+- 2026-10-16: The report form asks for an optional name; blank means anonymous.
+- 2026-10-16: The user clarified: 5 GB is for all reports combined, and each report is limited to a few MB (set to 2 MB, trimmed rather than refused).

@@ -22,7 +22,7 @@ def main() -> None:
     print(f"{len(rows)} reports in {path}\n")
     for r in rows[-a.last:]:
         last = r["conversation"][-1]
-        print(f"#{r['report_id']}  {r['created_at']}  [{r['channel']}]  turns={r['turns']}  model={last.get('served_by') or '?'}")
+        print(f"#{r['report_id']}  {r['created_at']}  [{r['channel']}]  by {r.get('reporter', 'anonymous')}  turns={r['turns']}  model={last.get('served_by') or '?'}")
         print(f"  note:     {r['note'] or '-'}")
         print(f"  question: {last['question'][:200]}")
         print(f"  answer:   {last['answer'][:300].replace(chr(10), ' ')}")

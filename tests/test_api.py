@@ -101,3 +101,29 @@ def test_reports_stop_at_storage_cap(tmp_path, monkeypatch):
     r = c.post("/api/report", json={"turn_id": d["turn_id"], "note": "second"}, headers=h)
     assert r.status_code == 507 and "full" in r.json()["detail"]
     assert (tmp_path / "reports.jsonl").stat().st_size == size        # nothing written, nothing deleted
+
+
+def test_report_name_optional(tmp_path, monkeypatch):
+    monkeypatch.setenv("FINBOT_REPORTS_DIR", str(tmp_path))
+    c = client(*["A mutual fund pools money from many investors."] * 2)
+    h = {"Authorization": f"Bearer {TOKEN}", "X-Client-IP": "4.4.4.4"}
+    d = done_event(post(c, "What is a mutual fund?").text)
+    c.post("/api/report", json={"turn_id": d["turn_id"], "note": "x", "name": "  Riya   S  "}, headers=h)
+    c.post("/api/report", json={"turn_id": d["turn_id"], "note": "y"}, headers=h)
+    recs = [json.loads(line) for line in (tmp_path / "reports.jsonl").read_text().splitlines()]
+    assert [r["reporter"] for r in recs] == ["Riya S", "anonymous"]
+    assert c.post("/api/report", json={"turn_id": d["turn_id"], "name": "n" * 81}, headers=h).status_code == 422
+
+
+def test_single_report_is_trimmed_to_its_cap_and_keeps_the_reported_answer(tmp_path, monkeypatch):
+    from finbot.reports import save_report
+    monkeypatch.setenv("FINBOT_REPORTS_DIR", str(tmp_path))
+    monkeypatch.setenv("FINBOT_REPORT_MAX_BYTES", "4000")
+    big = {"question": "q", "answer": "a" * 1500, "tools": [{"name": "loan_emi", "args": {}, "output": {"table": "x" * 3000}}]}
+    convo = [dict(big, question=f"turn {i}") for i in range(5)]
+    convo[-1]["answer"] = "THE REPORTED ANSWER " + "b" * 1200
+    save_report(convo, "too big", channel="web")
+    line = (tmp_path / "reports.jsonl").read_text()
+    rec = json.loads(line)
+    assert len(line.encode()) <= 4000 and rec["trimmed"] is True
+    assert rec["conversation"][-1]["question"] == "turn 4" and rec["conversation"][-1]["answer"].startswith("THE REPORTED ANSWER")

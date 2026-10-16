@@ -118,7 +118,8 @@ function reportLink(turnId) {
   const link = el("button", "linkbtn", "Report a problem"); link.type = "button";
   link.onclick = () => {
     link.hidden = true;
-    const form = el("form", "reportform"), note = el("textarea", "", null);
+    const form = el("form", "reportform"), note = el("textarea", "", null), name = el("input", "", null);
+    name.placeholder = "Your name (optional, blank = anonymous)"; name.maxLength = 80; name.autocomplete = "name";
     note.placeholder = "What was wrong? (optional)"; note.maxLength = 1000; note.rows = 2;
     const send = el("button", "chip", "Send report"), cancel = el("button", "linkbtn", "Cancel");
     send.type = "submit"; cancel.type = "button";
@@ -127,12 +128,12 @@ function reportLink(turnId) {
       e.preventDefault(); send.disabled = true;
       try {
         const r = await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ turn_id: turnId, note: note.value }) });
+          body: JSON.stringify({ turn_id: turnId, note: note.value, name: name.value }) });
         const j = await r.json().catch(() => ({}));
         form.replaceWith(el("div", r.ok ? "note" : "warn", r.ok ? "Thanks. This answer was saved for review." : (j.detail || "Could not send the report.")));
       } catch (_) { form.replaceWith(el("div", "warn", "Could not send the report.")); }
     };
-    form.append(note, send, cancel); wrap.append(form); note.focus();
+    form.append(name, note, send, cancel); wrap.append(form); name.focus();
   };
   wrap.append(link);
   return wrap;

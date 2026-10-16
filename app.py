@@ -196,11 +196,12 @@ for idx, m in enumerate(st.session_state.history):
         else:
             render_answer(m["trace"])
             with st.popover("Report a problem"):
+                name = st.text_input("Your name (optional, leave blank to stay anonymous)", key=f"rname{idx}", max_chars=80)
                 note = st.text_area("What was wrong? (optional)", key=f"rnote{idx}", max_chars=1000)
                 if st.button("Send report", key=f"rsend{idx}"):
                     convo = [turn_record(h["trace"]) for h in st.session_state.history[: idx + 1] if h.get("trace")]
                     try:
-                        st.success(f"Saved for review (report {save_report(convo, note, channel='mac-app')}).")
+                        st.success(f"Saved for review (report {save_report(convo, note, channel='mac-app', name=name)}).")
                     except ReportsFull as exc:
                         st.warning(str(exc))
             if idx == len(st.session_state.history) - 1:  # follow-up chips under the latest answer only
