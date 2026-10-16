@@ -67,6 +67,7 @@ def main() -> int:
             f.write(json.dumps({"id": r["id"], "topic": r.get("topic"), "parts": len(parts), "correct_0.5pct": g05, "correct_1pct": g1,
                                 "tools": [x["name"] for x in t.get("tools", [])], "latency_s": t.get("latency_s"),
                                 "revisions": t.get("revisions"), "error": err, "answer": answer}, ensure_ascii=False) + "\n")
+            f.flush()
             print(f"[{i}/{len(rows)}] {r['id']} {sum(g1)}/{len(parts)} parts (1%)  {t.get('latency_s', 0) or 0:5.1f}s  tools={[x['name'] for x in t.get('tools', [])]}", flush=True)
     print(f"\n{a.label} on {bot.settings.model}: parts correct {tot['ok05']}/{tot['parts']} at 0.5%, {tot['ok1']}/{tot['parts']} at 1%; "
           f"problems fully correct {tot['problems_all_ok1']}/{len(rows)} -> {out}")
