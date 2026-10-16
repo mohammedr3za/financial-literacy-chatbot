@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from collections import OrderedDict
 
+from . import chatlog
 from .attachments import table_text
 from .config import get_settings
 from .followups import suggest
@@ -138,8 +139,10 @@ def create_app(bot_factory=None, token: str | None = None) -> FastAPI:
                     else:
                         payload = public_trace(ev["trace"])
                         payload["turn_id"] = remember(req.thread_id, ev["trace"])
+                        chatlog.append(req.thread_id, turns[req.thread_id], ev["trace"])
                         yield f"event: done\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
-            except Exception:  # never leak internals to the public page
+            except Exception as exc:  # never leak internals to the public page
+                chatlog.append(req.thread_id, turns[req.thread_id], None, question=question, error=type(exc).__name__)
                 yield f"event: error\ndata: {json.dumps({'detail': 'FinBot could not answer right now. Please try again.'})}\n\n"
 
         return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

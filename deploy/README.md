@@ -16,6 +16,10 @@ FinBot runs in two places with the same code: the Mac (Streamlit app, `qwen3:8b`
 The quick tunnel URL changes every time the tunnel restarts, so repeat step 5 after any restart.
 
 ## Before terminating the GPU instance
+Download the conversation log too (SPEC 7.4); it is training data, so keep it out of git:
+```bash
+mkdir -p results/chatlog-gpu && rsync -az ubuntu@<ip>:~/finbot/results/chatlog/ results/chatlog-gpu/
+```
 Download the "Report a problem" submissions first; they live on the instance and are lost when it is terminated:
 ```bash
 mkdir -p results/reports && scp ubuntu@<ip>:~/finbot/results/reports/reports.jsonl results/reports/gpu-$(date +%Y%m%d-%H%M).jsonl

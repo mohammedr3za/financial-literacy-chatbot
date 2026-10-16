@@ -135,3 +135,13 @@ def test_health_says_where_the_model_runs(monkeypatch):
     assert c.get("/api/health").json() == {"status": "ok", "host": "cloud", "model": "qwen3.6-27b"}
     monkeypatch.setenv("FINBOT_BACKEND", "ollama"); monkeypatch.setenv("FINBOT_MODEL", "qwen3:8b")
     assert c.get("/api/health").json() == {"status": "ok", "host": "local", "model": "qwen3:8b"}
+
+
+def test_each_answer_is_appended_to_the_markdown_log(tmp_path, monkeypatch):
+    monkeypatch.setenv("FINBOT_CHATLOG_DIR", str(tmp_path))
+    c = client(tool_call("loan_emi", {"principal": 2000000, "annual_rate_pct": 8.5, "months": 240}, "c1"),
+               "Your EMI is ₹17,356.46; the schedule is below.")
+    assert post(c, "What EMI will I pay on a ₹20 lakh loan at 8.5% for 20 years? My PAN is ABCDE1234F").status_code == 200
+    text = next(tmp_path.glob("*.md")).read_text()
+    assert "₹17,356.46" in text and "`loan_emi`" in text and "turn 1" in text
+    assert "ABCDE1234F" not in text            # the log keeps the redacted question the model saw
