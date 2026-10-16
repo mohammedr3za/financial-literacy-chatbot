@@ -49,13 +49,23 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - [ ] `goal_saving`, `real_return`, `effective_annual_rate` tools (test-first)
 - [ ] Question-type router, routing enforcement, no-unsourced-figures check for calculations (test-first)
 - [ ] Follow-up chips and the goal example on the homepage
-- [x] ~~A100 serving~~ dropped: the user wants the GPU for fine-tuning only (M6). The backend switch with fallback stays for the teacher model.
+- [ ] A100 + vLLM serving Qwen3.6-27B-FP8 (restored: the user wants local and GPU), SSH tunnel for the Mac app with automatic local fallback
 - [ ] Fresh held-out calculation set (different wording and numbers from the 30)
 - **Acceptance:**
   - `uv run pytest` passes.
   - The ₹1 crore goal question returns about ₹20,017 a month, with a table.
   - On the fresh held-out set, every calculation is correct or the miss is explained.
   - The 30-problem set is re-run and reported separately as "after fixes" (the baseline stays 27/30).
+
+## M4.7 — Public web frontend (Vercel → API on the A100)
+- [ ] `api.py` (FastAPI, SSE streaming, token, rate limit, size limits) with tests
+- [ ] Deploy the API on the A100 (public documents only), plus a Cloudflare HTTPS tunnel
+- [ ] Static cream frontend and a Vercel proxy function; user logs in to Vercel once
+- **Acceptance:**
+  - From a phone, the Vercel URL answers the EMI question with the year-wise table.
+  - A request without the token is refused.
+  - The 11th request in a minute is rate-limited.
+  - With the GPU off, the page shows "offline".
 
 ### ✅ Chatbot deliverable complete (target Sat Oct 17 night)
 
