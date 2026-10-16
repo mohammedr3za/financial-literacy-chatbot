@@ -33,6 +33,18 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - [ ] `run_demo.sh`
 - **Acceptance:** works end to end with Wi-Fi off.
 
+## M4.5 — Tables, financial statements and the cream UI (user request, 2026-10-16)
+- [ ] Year-wise `table` output on `loan_emi`, `sip_future_value`, `tvm`, `npv_irr`, `bond_metrics`, `black_scholes` (test-first)
+- [ ] `financial_ratios`, `balance_sheet_check`, `cash_flow_statement` (test-first, textbook examples)
+- [ ] `present` graph step that appends tool tables to the answer; prompt and precheck updates for pasted statements
+- [ ] Streamlit redesign per SPEC 7.1, with CSV/Excel upload
+- **Acceptance:**
+  - `uv run pytest` passes.
+  - In the browser: the EMI question shows a 20-row year-wise table with a total row that matches the calculator.
+  - A pasted balance sheet gets a ratio table.
+  - A cash flow problem gets a statement table that reconciles.
+  - The new theme is checked by screenshot.
+
 ### ✅ Chatbot deliverable complete (target Sat Oct 17 night)
 
 ## M5 — Benchmark harness (Sun AM)

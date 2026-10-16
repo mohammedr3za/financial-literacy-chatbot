@@ -31,7 +31,7 @@ Configuration comes from environment variables (`.env`): `FINBOT_MODEL`, `FINBOT
 
 ## 3. Architecture (LangGraph)
 ```
-START → precheck → retrieve → agent ⇄ tools → review → END
+START → precheck → retrieve → agent ⇄ tools → review → present → END
                                  ↑                │
                                  └── revise (max 1)┘
 ```
@@ -80,6 +80,25 @@ Every tool is a pure Python function. It returns JSON containing `inputs`, `form
 | `bond_metrics(face, coupon_pct, years, freq, ytm_pct=None, price=None)` | Takes exactly one of `ytm_pct` or `price`, and returns price or YTM plus Macaulay and modified duration. |
 | `black_scholes(spot, strike, years, rate_pct, vol_pct, kind)` | European call or put price with delta, gamma, vega, theta, and rho. |
 
+### 4.1 Financial-statement tools
+| Tool | Contract |
+|---|---|
+| `financial_ratios(...)` | Takes any subset of named statement items (current assets and liabilities, inventory, cash, receivables, payables, total assets, liabilities, equity, debt, revenue, COGS, gross profit, EBIT, interest, net income, operating cash flow, capex, depreciation). Computes every ratio those items allow: liquidity, leverage, profitability, efficiency, cash, and a DuPont check. Each ratio comes with its formula. |
+| `balance_sheet_check(assets, liabilities, equity)` | Takes items and amounts per section. Returns section totals, whether assets equal liabilities plus equity (and the difference if not), and a common-size % of total assets. |
+| `cash_flow_statement(net_income, non_cash_items, working_capital, investing, financing, opening_cash, closing_cash)` | Indirect method. Each working-capital item gives `type` (current_asset or current_liability) and either `change` or `opening` and `closing`. The tool applies the sign rules. Returns CFO, CFI, CFF, net change, closing cash, and a reconciliation against a given closing cash. |
+
+### 4.2 Tables
+- Tables are built **by code from tool results**, never typed by the model. Every tool that has a natural schedule returns a `table` with title, columns and rows, already formatted with Indian digit grouping:
+  - `loan_emi`: a year-by-year amortization (opening balance, EMI paid, interest, principal, closing balance, plus a total row);
+  - `sip_future_value`: a year-by-year view (monthly amount, invested in the year, total invested, value at year end, gain);
+  - `tvm`: year-by-year growth for future-value, present-value and deposit solves;
+  - `npv_irr`: year, cash flow, discount factor, present value, cumulative present value;
+  - `bond_metrics`: period, cash flow, discount factor, present value, and time-weighted present value (the duration table);
+  - `black_scholes`: the Greeks;
+  - all three statement tools.
+- A deterministic `present` step after `review` appends each tool table to the final answer as a markdown table, so the CLI, the benchmark log and the app all show the same exact table. Tables are capped at 60 rows.
+- The prompt tells the model not to copy tool tables, and to use a compact markdown table whenever it compares options or lists figures itself.
+
 ## 5. Trust policy (system prompt), mapped to the rubric
 1. **Accuracy:** Every number in an answer comes from a tool, and the answer shows the inputs used.
 2. **Risk disclosure:** Answers about investment products or strategies state the risks and that returns are not guaranteed.
@@ -108,6 +127,15 @@ The bot never asks for personal or account details, and it replies in the user's
 - Each answer has a **"How I got this"** expander showing the precheck flags, any redactions, the tool calls with inputs and outputs, and the sources with links.
 - Each session is capped at 25 messages and has a "New conversation" button. A sidebar shows the model name.
 - `run_demo.sh` starts Ollama if needed, warms up the model, and opens the app. It works with Wi-Fi off.
+
+### 7.1 Visual design (modelled on setu-interface.created.app)
+- **Colours:** cream background `#FAF9F5`, white cards, near-black text `#111111`, muted text `#888888`, hairline borders `#E4E4E7`, one accent, terracotta `#C85A32`.
+- **Type:** the system sans-serif. Large headings are light, with tight letter-spacing. Labels are small, uppercase and widely spaced.
+- **Shapes:** pill buttons and chips, cards with large radii, no heavy shadows.
+- **Minimal text:** one short headline, one uppercase label with the disclaimer, example prompts as chips. Settings live in a sidebar that starts collapsed. Streamlit's deploy toolbar is hidden.
+- **Messages:** the user's message is a dark pill on the right, and the answer is plain text on cream. "How I got this" becomes a small "Details" disclosure.
+- **Tables:** white cards with uppercase column headers, right-aligned tabular numbers, hairline rows and a bold total row.
+- **Input:** the chat box accepts pasted statements and CSV or Excel uploads, which are converted to a table in the question.
 
 ## 8. Benchmark harness (`bench/`)
 - `questions.yaml` covers 8 base questions × 3 personas (novice, greedy-literate, anxious saver) × 3 framings (neutral, eager, leading). Member 2 owns its content.
@@ -148,3 +176,5 @@ The bot never asks for personal or account details, and it replies in the user's
 - 2026-10-16: Review checks 6–8 added after the first end-to-end run. With no documents indexed, the model cited a non-existent `[S1]`, invented a crypto tax rule ("20% with indexation after 36 months"; the real rule is a flat 30% under section 115BBH), and gave an unofficial link. The prompt now also asks for short answers (about 120 words) and plain-text formulas.
 - 2026-10-16: Model switched from `qwen3.5:9b` to `qwen3:8b`. The `qwen3.5:9b` default variant (nvfp4/MLX) used 10.6 GB and made the Mac swap. On the 6 acceptance prompts with document search, all three candidates passed; median answer time was qwen3:8b 28.2 s, qwen3.5:9b-q4_K_M 46.0 s, qwen3.5:4b 45.6 s (4/6 drafts needed a rewrite). The fine-tune base follows the model: `Qwen/Qwen3-8B`.
 - 2026-10-16: Review check 9 added (unsupported figures on Indian rule questions). Audit found qwen3:8b adding a "10% surcharge" and "32.2% effective rate" that were in no source. Retrieval now passes the top 3 chunks instead of 5 to cut noise and prompt length.
+- 2026-10-16: Temperature set to 0 (deterministic), and the prompt now says a rule for one product never applies to another. At temperature 0.3, the crypto tax question gave a wrong "indexation after 36 months" claim in 1 of 3 runs (mixing general capital-gains rules into VDA rules); at temperature 0 it was correct in all runs, at 19–25 s with no rewrites. Deterministic answers also make the benchmark repeatable.
+- 2026-10-16: The user asked for (1) tables wherever possible, especially year-wise interest and principal schedules, (2) balance sheet and cash flow questions and problems, and (3) a much cleaner cream, minimal UI modelled on setu-interface.created.app. Added sections 4.1, 4.2 and 7.1 and the `present` step. Tables come from tool code, so they are exact and cost no model time.
