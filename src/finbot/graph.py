@@ -250,11 +250,12 @@ FORCE_TOOL_CODES = {"no_tool_for_numbers", "wrong_tool"}   # reviewer codes whos
 def without_unverified(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict) -> str:
     """The final answer after a failed revision, with no unverified figure (SPEC 3.1). A recognised calculation gets the
     number-free fallback: its key figures must come from a tool. A question that only sounds like a calculation (a scam
-    check, "can this coin 10x") loses only the sentences with unverified figures, if enough verified text is left."""
+    check, "can this coin 10x"), or an answer that asks for missing inputs, loses only the sentences with unverified
+    figures, if enough verified text is left."""
     bad = unverified_figures(answer, question, evidence, tools_used, flags)
     if not bad:
         return answer
-    if not flags.get("calc_types"):
+    if not flags.get("calc_types") or asks_for_inputs(answer):   # a request for inputs presents no computed result
         pruned = prune_figures(_strip_math_markup(answer), bad)
         if len(pruned) >= MIN_PRUNED_CHARS and not unverified_figures(pruned, question, evidence, tools_used, flags):
             return pruned

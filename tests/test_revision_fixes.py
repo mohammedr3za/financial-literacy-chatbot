@@ -115,3 +115,14 @@ def test_draft_that_asks_for_missing_inputs_is_not_forced_to_call_a_tool():
     fb, _ = bot(ask_inputs, ask_inputs, forced=forced)
     t = fb.ask("What is the NPV of a project that costs ₹10,000?", thread_id="inputs")
     assert forced.calls == [] and "Please share the cash flows" in t["answer_text"]
+
+
+def test_request_for_inputs_on_a_calculation_route_keeps_its_text_without_unverified_figures():
+    ask_inputs = ("To work out the NPV I need the cash inflows for each year and the discount rate. The cost of ₹10,000 is "
+                  "given, but the yearly inflows and the project life are not. For example, at a 10% rate the NPV would be "
+                  "₹2,437. Please share the cash flows, the rate and the number of years, and I will calculate it exactly.")
+    fb, _ = bot(ask_inputs, ask_inputs)
+    t = fb.ask("What is the NPV of a project that costs ₹10,000?", thread_id="inputs-prune")
+    text = t["answer_text"]
+    assert "could not compute" not in text and "2,437" not in t["answer"]
+    assert "Please share the cash flows, the rate and the number of years" in text
