@@ -42,7 +42,7 @@ chmod +x run_v2.sh && nohup ./run_v2.sh > train_v2.log 2>&1 < /dev/null & echo s
   ;;
 fetch)
   mkdir -p train/out_v2
-  rsync -az --include "*Q5_K_M*.gguf" --include "*Q4_K_M*.gguf" --include "lora/***" --include "*/" --exclude "*" \
+  rsync -az --partial --include "*Q5_K_M*.gguf" --include "lora/***" --include "*/" --exclude "*" \
         "ubuntu@$IP:~/finbot-train/out_v2/" train/out_v2/
   rsync -az "ubuntu@$IP:~/finbot-train/train_v2.log" train/out_v2/
   GGUF=$(find train/out_v2 -name "*Q5_K_M*.gguf" | head -1)
