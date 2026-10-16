@@ -24,7 +24,7 @@ def test_emi_flow_uses_tool_and_normalized_amount():
 
 
 def test_personal_data_never_reaches_model():
-    fb, model = bot("Duration measures rate sensitivity; convexity measures its curvature [S1]. Please don't share your PAN.")
+    fb, model = bot("Duration measures rate sensitivity; convexity measures its curvature. Please don't share your PAN.")
     t = fb.ask("My PAN is ABCDE1234F. Explain duration vs convexity")
     assert "ABCDE1234F" not in all_model_text(model)
     assert t["redactions"] == ["PAN"]

@@ -18,6 +18,11 @@ _RISK_WORDS = re.compile(r"(?i)\b(risks?|risky|not guaranteed|no guarantee|canno
 _CITATION = re.compile(r"\[S\d+\]")
 _REFERRAL = re.compile(r"(?i)(sebi[- ]registered|registered investment advis[eo]r|investment advis[eo]r|financial advis[eo]r|"
                        r"certified financial planner|registered advis[eo]r)")
+_CANNOT_VERIFY = re.compile(r"(?i)(cannot|can't|could not|couldn't|unable to|not able to)\s+(verify|confirm)|no (official )?source")
+_DOMAIN = re.compile(r"(?i)\b(?:https?://)?((?:[a-z0-9-]+\.)+(?:gov\.in|org\.in|co\.in|nic\.in|com|in|org|net|io))\b")
+ALLOWED_DOMAINS = ("sebi.gov.in", "rbi.org.in", "incometax.gov.in", "incometaxindia.gov.in", "amfiindia.com",
+                   "mutualfundssahihai.com", "dicgc.org.in", "irdai.gov.in", "pfrda.org.in", "nseindia.com", "bseindia.com",
+                   "nsdl.co.in", "cdslindia.com", "cybercrime.gov.in")
 _BUY_CALL = re.compile(r"(?i)\b(you should|i (would |'d )?recommend|i suggest|go ahead and|my (top )?pick is|the best (stock|fund|share) (to buy )?is)"
                        r"\s+(buy(ing)?|sell(ing)?|invest(ing)? in|put(ting)? (your|all)|go(ing)? for)\b")
 
@@ -37,7 +42,7 @@ class ReviewResult:
     issues: list[str] = field(default_factory=list)
 
 
-def review_answer(answer: str, flags: dict, tools_used: list[str], sources_relevant: bool) -> ReviewResult:
+def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: int, source_urls: tuple = ()) -> ReviewResult:
     codes, issues = [], []
     text = answer or ""
     if not text.strip():
@@ -54,6 +59,7 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], sources_relev
     if needs_risk and not _RISK_WORDS.search(text):
         codes.append("no_risk_disclosure")
         issues.append("It discusses an investment without stating the risks. Add a short, specific risk disclosure.")
+    sources_relevant = num_sources > 0
     needs_citation = sources_relevant and (flags.get("regulatory_topic") or not flags.get("calculation_intent"))
     if needs_citation and len(text) > 200 and not _CITATION.search(text):
         codes.append("no_citation")
@@ -65,6 +71,23 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], sources_relev
         if not _REFERRAL.search(text):
             codes.append("no_adviser_referral")
             issues.append("For a personal investment decision, suggest consulting a SEBI-registered investment adviser.")
+    cited = {int(n) for n in re.findall(r"\[S(\d+)\]", text)}
+    fake = sorted(n for n in cited if n < 1 or n > num_sources)
+    if fake:
+        codes.append("fake_citation")
+        have = f"only [S1] to [S{num_sources}] were provided" if num_sources else "no sources were provided"
+        issues.append(f"It cites {', '.join(f'[S{n}]' for n in fake)} but {have}. Remove every citation that does not match a provided source.")
+    if flags.get("regulatory_topic") and not sources_relevant and not _CANNOT_VERIFY.search(text):
+        codes.append("unverified_regulatory")
+        issues.append("No official source was found for this Indian rule or tax question. Say clearly that you cannot verify the details "
+                      "and that rules change, then point to the official website. Do not state specific rates or sections as facts.")
+    allowed = ALLOWED_DOMAINS + tuple(_DOMAIN.findall(" ".join(source_urls)))
+    unknown = sorted({d.lower() for d in _DOMAIN.findall(text)
+                      if not any(d.lower() == a or d.lower().endswith("." + a) for a in allowed)})
+    if unknown:
+        codes.append("unlisted_link")
+        issues.append(f"It mentions websites that may not exist or are not official: {', '.join(unknown)}. "
+                      "Only mention sebi.gov.in, rbi.org.in, incometax.gov.in, amfiindia.com, dicgc.org.in or scores.sebi.gov.in.")
     return ReviewResult(not codes, codes, issues)
 
 

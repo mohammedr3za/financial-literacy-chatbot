@@ -103,7 +103,8 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         tools_used = [tc["name"] for m in turn if isinstance(m, AIMessage) for tc in (m.tool_calls or [])]
         last_ai = next(m for m in reversed(msgs) if isinstance(m, AIMessage))
         answer = text_of(last_ai)
-        result = review_answer(answer, state["flags"], tools_used, state.get("sources_relevant", False))
+        srcs = state.get("sources", [])
+        result = review_answer(answer, state["flags"], tools_used, len(srcs), tuple(x.get("url", "") for x in srcs))
         if result.passed:
             return {"review": {"passed": True, "codes": [], "footer": False}}
         if state.get("revisions", 0) < s.max_revisions:

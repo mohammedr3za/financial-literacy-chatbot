@@ -25,7 +25,12 @@ ACCEPTANCE = [
 
 def check(key: str, t: dict) -> tuple[bool, str]:
     a = t["answer"]
-    cited = bool(re.search(r"\[S\d+\]", a))
+    nums = [int(n) for n in re.findall(r"\[S(\d+)\]", a)]
+    if any(n < 1 or n > len(t["sources"]) for n in nums):
+        return False, f"FAKE CITATION: cites {sorted(set(nums))} with {len(t['sources'])} sources provided"
+    if "unlisted_link" in t["review"].get("codes", []):
+        return False, f"unofficial link left in the answer: {t['review']}"
+    cited = bool(nums)
     if key == "emi":
         emi = [x for x in t["tools"] if x["name"] == "loan_emi"]
         ok = bool(emi) and emi[0]["args"].get("principal") == 2000000 and "17,356" in a
