@@ -17,8 +17,8 @@ FinBot is designed to embody the team's trust checklist. It is a demonstration o
 ## 2. Runtime environment
 | Item | Choice |
 |---|---|
-| Machine | The user's Mac (Apple M5, 16 GB). It is both the development machine and the booth machine, and it runs fully offline. |
-| Model server | Ollama (Homebrew service) at `http://localhost:11434` |
+| Machine | The user's Mac (Apple M5, 16 GB) runs the app, search and the offline fallback model. The **primary model runs on a Lambda Cloud A100 (40 GB) in asia-south-1** (user-approved, $1.99/h, terminated after each session), reached through a private SSH tunnel. |
+| Model server | Primary: **vLLM** serving `Qwen/Qwen3.6-27B-FP8` on the A100 (`--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3`), reached at `http://localhost:8000/v1` through the tunnel. Fallback: Ollama on the Mac at `http://localhost:11434`. If the primary fails or is unreachable, the same request goes to the fallback automatically. |
 | Chat model | `qwen3:8b` (Apache-2.0, Q4_K_M, 5.4 GB), **thinking off** by default (`FINBOT_THINKING=off`), output capped at 700 tokens. Alternatives measured: `qwen3.5:9b-q4_K_M`, `qwen3.5:4b` (see changelog). |
 | Embeddings | `bge-m3` via Ollama |
 | Language | Python 3.12, managed with `uv` |
@@ -80,6 +80,15 @@ Every tool is a pure Python function. It returns JSON containing `inputs`, `form
 | `bond_metrics(face, coupon_pct, years, freq, ytm_pct=None, price=None)` | Takes exactly one of `ytm_pct` or `price`, and returns price or YTM plus Macaulay and modified duration. |
 | `black_scholes(spot, strike, years, rate_pct, vol_pct, kind)` | European call or put price with delta, gamma, vega, theta, and rho. |
 
+### 4.0 Calculation reliability (user requirement: no calculation or formula mistakes)
+- **Dedicated tools per question type** so the model never has to repurpose a tool:
+  - `goal_saving(target, years, annual_return_pct, current_savings=0, step_up_pct=0)` gives the monthly SIP needed to reach a target. It verifies itself by recomputing the target from the answer.
+  - `real_return(nominal_pct, inflation_pct)` gives the real return.
+  - `effective_annual_rate(nominal_pct, periods_per_year)` gives the effective annual rate.
+- **Question-type router (deterministic):** precheck detects common types and names the required tool in the pre-check notes, with how to map the numbers. Types: goal saving, loan EMI, SIP future value, lump-sum growth, present value, CAGR, years to double or reach a goal, real return, effective rate, NPV/IRR, bond, option, GST and percentages, and statements.
+- **Routing enforcement:** if a detected type is answered without one of its required tools, review fails with a note naming the right tool.
+- **No unsourced figures in calculations:** for calculation answers, every rupee amount and percentage must match the question or a tool output within 0.5% (for rounding). Otherwise review fails. Mental arithmetic, such as the Rule of 72, is not allowed.
+
 ### 4.1 Financial-statement tools
 | Tool | Contract |
 |---|---|
@@ -136,6 +145,7 @@ The bot never asks for personal or account details, and it replies in the user's
 - **Messages:** the user's message is a dark pill on the right, and the answer is plain text on cream. "How I got this" becomes a small "Details" disclosure.
 - **Tables:** white cards with uppercase column headers, right-aligned tabular numbers, hairline rows and a bold total row.
 - **Input:** the chat box accepts pasted statements and CSV or Excel uploads, which are converted to a table in the question.
+- **Examples and follow-ups:** the homepage examples include the goal question ("How much should I save each month to reach ₹1 crore in 15 years at 12%?"). Under each answer, up to three follow-up chips are chosen by code from what was asked and which tools ran, e.g. "Is the company healthy? Give me the key ratios", "Should I make this investment?", "What if I step up 10% a year?". Clicking a chip asks it in the same conversation.
 
 ## 8. Benchmark harness (`bench/`)
 - `questions.yaml` covers 8 base questions × 3 personas (novice, greedy-literate, anxious saver) × 3 framings (neutral, eager, leading). Member 2 owns its content.
@@ -179,3 +189,4 @@ The bot never asks for personal or account details, and it replies in the user's
 - 2026-10-16: Temperature set to 0 (deterministic), and the prompt now says a rule for one product never applies to another. At temperature 0.3, the crypto tax question gave a wrong "indexation after 36 months" claim in 1 of 3 runs (mixing general capital-gains rules into VDA rules); at temperature 0 it was correct in all runs, at 19–25 s with no rewrites. Deterministic answers also make the benchmark repeatable.
 - 2026-10-16: The user asked for (1) tables wherever possible, especially year-wise interest and principal schedules, (2) balance sheet and cash flow questions and problems, and (3) a much cleaner cream, minimal UI modelled on setu-interface.created.app. Added sections 4.1, 4.2 and 7.1 and the `present` step. Tables come from tool code, so they are exact and cost no model time.
 - 2026-10-16: Tools step changed from LangGraph's ToolNode to a custom node with input grounding for statement tools. A real-model ratio run passed `total_liabilities=1150` and `operating_cash_flow=0`, neither of which was in the data, which made the debt ratio wrong.
+- 2026-10-16: User requirement: no calculation mistakes. The baseline 27/30 run had "save ₹10 lakh a month for ₹1 crore" (wrong tool), Rule-of-72 mental arithmetic and a GST misread. Added section 4.0 (dedicated goal, real-return and effective-rate tools; deterministic router; routing enforcement; no unsourced figures in calculations) and follow-up chips. The primary model moves to Qwen3.6-27B-FP8 on a Lambda A100 (user approved); qwen3:8b on the Mac becomes the fallback.

@@ -45,6 +45,18 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
   - A cash flow problem gets a statement table that reconciles.
   - The new theme is checked by screenshot.
 
+## M4.6 — Calculation reliability and the GPU model (user request, 2026-10-16)
+- [ ] `goal_saving`, `real_return`, `effective_annual_rate` tools (test-first)
+- [ ] Question-type router, routing enforcement, no-unsourced-figures check for calculations (test-first)
+- [ ] Follow-up chips and the goal example on the homepage
+- [ ] A100 + vLLM serving Qwen3.6-27B-FP8, SSH tunnel, automatic fallback to the Mac model
+- [ ] Fresh held-out calculation set (different wording and numbers from the 30)
+- **Acceptance:**
+  - `uv run pytest` passes.
+  - The ₹1 crore goal question returns about ₹20,017 a month, with a table.
+  - On the fresh held-out set, every calculation is correct or the miss is explained.
+  - The 30-problem set is re-run and reported separately as "after fixes" (the baseline stays 27/30).
+
 ### ✅ Chatbot deliverable complete (target Sat Oct 17 night)
 
 ## M5 — Benchmark harness (Sun AM)
