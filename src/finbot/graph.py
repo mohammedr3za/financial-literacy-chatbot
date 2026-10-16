@@ -12,7 +12,8 @@ from langgraph.graph.message import add_messages
 from .config import Settings, get_settings
 from .precheck import precheck as run_precheck
 from .prompts import SYSTEM_PROMPT, context_block
-from .review import FOOTER, _strip_math_markup, cut_hypothetical, review_answer, reviewer_note, unsupported_figures
+from .review import (FOOTER, _strip_math_markup, cut_hypothetical, prune_figures, review_answer, reviewer_note,
+                     unsupported_figures)
 from .tables import to_markdown
 from .tools.financial_solver import KIND as SOLVER_KIND
 from .tools.financial_solver import resolve as solver_name
@@ -227,15 +228,37 @@ def not_reliable(question: str) -> str:
     return f"{local}\n\n{NOT_RELIABLE}" if local else NOT_RELIABLE
 
 
-def fabricated_figures(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict) -> bool:
-    """A calculation answer whose figures are not in the question (no successful tool call) or not in the evidence
-    (question, sources, tool results). Such an answer is replaced by the number-free fallback (SPEC 3.1)."""
+def unverified_figures(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict) -> list[str]:
+    """Figures in a calculation answer that are not in the question (no successful tool call) or not in the evidence
+    (question, sources, tool results)."""
     if not (flags.get("calculation_intent") or flags.get("calc_types")):
-        return False
+        return []
     text = _strip_math_markup(answer)
     if not tools_used:   # with no calculator, only figures restated exactly from the question may appear ($950 is not 9.50%)
-        return bool(unsupported_figures(text, question, plain_numbers=True, scale_variants=False))
-    return bool(unsupported_figures(text, evidence, rel_tol=0.005, plain_numbers=True))
+        return unsupported_figures(text, question, plain_numbers=True, scale_variants=False)
+    return unsupported_figures(text, evidence, rel_tol=0.005, plain_numbers=True)
+
+
+def fabricated_figures(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict) -> bool:
+    return bool(unverified_figures(answer, question, evidence, tools_used, flags))
+
+
+MIN_PRUNED_CHARS = 200
+FORCE_TOOL_CODES = {"no_tool_for_numbers", "wrong_tool"}   # reviewer codes whose revision must call a tool (vLLM)
+
+
+def without_unverified(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict) -> str:
+    """The final answer after a failed revision, with no unverified figure (SPEC 3.1). A recognised calculation gets the
+    number-free fallback: its key figures must come from a tool. A question that only sounds like a calculation (a scam
+    check, "can this coin 10x") loses only the sentences with unverified figures, if enough verified text is left."""
+    bad = unverified_figures(answer, question, evidence, tools_used, flags)
+    if not bad:
+        return answer
+    if not flags.get("calc_types"):
+        pruned = prune_figures(_strip_math_markup(answer), bad)
+        if len(pruned) >= MIN_PRUNED_CHARS and not unverified_figures(pruned, question, evidence, tools_used, flags):
+            return pruned
+    return not_reliable(question)
 
 
 # ---------------------------------------------------------------- final clean-ups before an answer ships
@@ -411,11 +434,14 @@ def _load_kb(settings: Settings):
     return KnowledgeBase.load(index, get_embedder(settings), settings.min_dense_score)
 
 
-def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, checkpointer=None):
+def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, checkpointer=None, forced_model=None):
+    """forced_model: a tools model that must call a tool, used for the revision of a recognised calculation answered
+    without one (SPEC 3.1). Built from the settings (vLLM only) when model is None; tests pass their own."""
     s = settings or get_settings()
     if model is None:
-        from .llm import get_runnables
+        from .llm import get_forced_tool_runnable, get_runnables
         model, model_with_tools = get_runnables(CALC_TOOLS, s)
+        forced_model = get_forced_tool_runnable(CALC_TOOLS, s)
     else:
         model_with_tools = model.bind_tools(CALC_TOOLS)
     if kb == "auto":
@@ -471,7 +497,11 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
             return [SystemMessage(SYSTEM_PROMPT), *candidate]
 
         capped = state.get("tool_iterations", 0) >= s.max_tool_iterations
-        runner = model if capped else model_with_tools
+        last = msgs[-1]
+        force = (forced_model is not None and not capped and state["flags"].get("calc_types")
+                 and isinstance(last, HumanMessage) and last.name == "reviewer"
+                 and FORCE_TOOL_CODES & set(state.get("review", {}).get("codes", [])))
+        runner = forced_model if force else model if capped else model_with_tools
         try:
             response = runner.invoke(model_input(trim=False))
         except Exception as exc:  # noqa: BLE001 - only a context-length error is retried
@@ -586,8 +616,9 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
                     "review": {"passed": False, "codes": result.codes, "first_draft_codes": result.codes}}
         if "hypothetical_example" in result.codes:
             answer = cut_hypothetical(answer)
-        if fabricated_figures(answer, text_of(msgs[qi]), evidence, tools_used, state["flags"]):
-            answer = not_reliable(text_of(msgs[qi]))
+        checked = without_unverified(answer, text_of(msgs[qi]), evidence, tools_used, state["flags"])
+        if checked != answer:
+            answer = checked
         elif not answer.strip():   # the model gave up after the reviewer note: say so instead of showing only the footer
             answer = ("I could not complete this answer reliably. Please rephrase the question, or give the figures "
                       "(for example the cash flows year by year) and I will calculate it.")
@@ -686,10 +717,10 @@ def turn_trace(state: dict) -> dict:
 class FinBot:
     """Thin wrapper used by the CLI, the Streamlit app and the benchmark runner."""
 
-    def __init__(self, model=None, kb: Any = "auto", settings: Settings | None = None):
+    def __init__(self, model=None, kb: Any = "auto", settings: Settings | None = None, forced_model=None):
         self.settings = settings or get_settings()
         self.prompt_budget = prompt_budget(self.settings)
-        self.graph = build_graph(model=model, kb=kb, settings=self.settings)
+        self.graph = build_graph(model=model, kb=kb, settings=self.settings, forced_model=forced_model)
 
     def ask_iter(self, text: str, thread_id: str = "default", use_rag: bool = True):
         """Yields {"event": "step", "node": ..., "update": ...} per graph step, then {"event": "done", "trace": ...}."""

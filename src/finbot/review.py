@@ -445,6 +445,33 @@ def cut_hypothetical(text: str) -> str:
     return text[:start].strip()
 
 
+_HEADING = re.compile(r"^\s*(#{1,6}\s+\S.*|\*\*[^*\n]+\*\*:?)\s*$")
+_BULLET = re.compile(r"^(\s*(?:[-*•]|\d+[.)])\s+)?(.*)$")
+
+
+def prune_figures(text: str, figures: list[str]) -> str:
+    """Drop every sentence, bullet or table row that states one of figures, and any heading left with nothing under it;
+    keep the rest of the answer (SPEC 3.1)."""
+    if not figures:
+        return text
+
+    def hit(s: str) -> bool:
+        return any(f in s for f in figures)
+
+    kept = []
+    for line in (text or "").splitlines():
+        if not hit(line):
+            kept.append(line)
+        elif not line.lstrip().startswith("|"):          # a table row with a bad figure goes entirely
+            lead, body = _BULLET.match(line).groups()
+            rest = [p for p in re.split(r"(?<=[.!?])\s+", body) if not hit(p)]
+            if any(re.search(r"[^\W\d_]{3}", p) for p in rest):
+                kept.append((lead or "") + " ".join(rest))
+    out = [line for i, line in enumerate(kept)
+           if not (_HEADING.match(line) and _HEADING.match(next((x for x in kept[i + 1:] if x.strip()), "## end")))]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
 def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: int, source_urls: tuple = (), evidence: str | None = None) -> ReviewResult:
     codes, issues = [], []
     text = answer or ""
