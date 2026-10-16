@@ -17,3 +17,5 @@ train/out/
 *.safetensors
 bench/sheets/
 bench/report/
+web/.vercel
+.vercel
