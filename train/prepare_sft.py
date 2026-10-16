@@ -36,6 +36,31 @@ def tool_names() -> set[str]:
     return set(TOOLS_BY_NAME)
 
 
+def current_tools():
+    """The tool definitions the served model sees now; every example is re-tagged with them."""
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+    from finbot.tools.registry import CALC_TOOLS, TOOLS_BY_NAME
+    return [convert_to_openai_tool(t) for t in CALC_TOOLS], TOOLS_BY_NAME
+
+
+def calls_valid(rec: dict, by_name: dict) -> bool:
+    """Every tool call must name a current tool and pass its argument schema."""
+    for m in rec["messages"]:
+        for tc in m.get("tool_calls") or []:
+            fn = tc["function"]
+            tool = by_name.get(fn["name"])
+            if tool is None:
+                return False
+            try:
+                schema = tool.args_schema
+                args = fn["arguments"] if isinstance(fn["arguments"], dict) else json.loads(fn["arguments"])
+                if schema is not None and hasattr(schema, "model_validate"):
+                    schema.model_validate(args)
+            except Exception:
+                return False
+    return True
+
+
 def question_of(rec: dict, by_id: dict) -> str:
     if rec.get("qid") in by_id:
         return by_id[rec["qid"]]
@@ -67,6 +92,7 @@ def main() -> int:
                 q = json.loads(line)
                 tests.append((q.get("question") or q.get("q") or "").lower())
     names = tool_names()
+    schemas, by_name = current_tools()
     named = re.compile(r"`(" + "|".join(map(re.escape, names)) + r")`|\b(" + "|".join(map(re.escape, names)) + r")\b|\bthe \w+ tool\b", re.I)
     drops, seen, keep = Counter(), set(), []
     for path in a.inputs:
@@ -99,6 +125,9 @@ def main() -> int:
                 m["content"] = text
             if bad:
                 continue
+            if not calls_valid(rec, by_name):
+                drops["tool_call_no_longer_valid"] += 1; continue
+            rec["tools"] = schemas
             rec["has_tool_call"] = any(m.get("tool_calls") for m in rec["messages"])
             keep.append(rec)
     rng = random.Random(3407)
