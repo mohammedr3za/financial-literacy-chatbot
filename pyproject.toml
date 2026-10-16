@@ -10,6 +10,7 @@ dependencies = [
     "langchain-core>=1.6.11",
     "langchain-ollama>=1.1.0",
     "langgraph>=1.2.15",
+    "matplotlib>=3.11.2",
     "numpy>=2.5.4",
     "pypdf>=6.20.1",
     "python-dotenv>=1.2.4",
