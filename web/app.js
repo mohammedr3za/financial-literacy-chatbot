@@ -27,7 +27,7 @@ function setOnline(ok) { online = ok; $("#offline").hidden = ok; $("#send").disa
 function setWhere(host, model) {
   const w = $("#where");
   if (!host) { w.hidden = true; return; }
-  w.textContent = (host === "cloud" ? "Lambda GPU" : "Local Mac") + (model ? " · " + model : "");
+  w.textContent = host === "cloud" ? "Lambda" : "Local";
   w.className = "where " + host; w.hidden = false;
 }
 async function health() {
