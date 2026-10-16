@@ -139,3 +139,15 @@ Shipped: `qwen3:8b`. A manual audit then found invented tax figures, which led t
   2. The ratio tool received invented `total_liabilities=1150`, `operating_cash_flow=0` and `gross_profit=840`. Fixed with an input-grounding guard: statement-tool numbers must appear in the user's message, or be an exact difference for a working-capital change. The model retried with only the given figures, and the result was correct.
   3. "Leverage" in a ratio question triggered the high-risk flag, forcing a needless rewrite (120 s). Fixed.
 - Regression: `finbot.cli --acceptance` → 6/6 (median about 35 s).
+
+### 2026-10-16 — M5 baseline: calculation benchmark (in progress; question set not yet frozen)
+`uv run python bench/run_finbot.py --config rag --set calc` on `qwen3:8b` → **27/30 correct** (0.5% tolerance), median 29.3 s, slowest 71.8 s, 17 min total, 0 errors, 5 rewrites. Raw file: `results/finbot-rag-calc.jsonl` (not committed).
+
+| Problem | What went wrong | Root cause |
+|---|---|---|
+| c14 years to double at 9% | Used the Rule of 72 (8.0) instead of computing it (8.04) | "how many years … double" not recognised as a calculation, so no tool was required |
+| c15 monthly saving for ₹1 crore | Called `sip_future_value` with ₹1 crore as the *monthly* amount and answered "₹10 lakh a month" | Wrong tool: a goal-based saving needs `tvm` solving for `pmt` |
+| c28 15% of ₹2,45,000 plus 18% GST "on that amount" | Applied GST to ₹2,45,000 instead of to the 15% share | Misread the question |
+
+c29 (real return) and c30 (effective annual rate) were correct but computed without a tool. That breaks rule 1, and the review did not catch it because those phrasings are not flagged as calculations.
+Caution: any fix must be checked on *new* problems, not these 30, or the score measures tuning to the test rather than ability.
