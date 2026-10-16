@@ -14,6 +14,7 @@ from .config import Settings, get_settings
 from .precheck import precheck as run_precheck
 from .prompts import SYSTEM_PROMPT, context_block
 from .review import FOOTER, review_answer, reviewer_note
+from .tables import to_markdown
 from .tools.registry import CALC_TOOLS
 
 _THINK = re.compile(r"<think>.*?</think>", re.S)
@@ -33,6 +34,7 @@ class State(TypedDict, total=False):
     tool_iterations: int
     revisions: int
     review: dict
+    tables: list[dict]
 
 
 def text_of(msg: AnyMessage) -> str:
@@ -65,7 +67,7 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         return {"messages": [HumanMessage(content=r.text)], "question_idx": len(state.get("messages", [])),
                 "flags": r.flags, "redactions": r.redactions, "amounts": r.amounts, "user_input": "",
                 "sources": [], "sources_relevant": False, "best_dense": 0.0, "rag_status": "",
-                "tool_iterations": 0, "revisions": 0, "review": {}}
+                "tool_iterations": 0, "revisions": 0, "review": {}, "tables": []}
 
     def retrieve(state: State, config) -> dict:
         if not config.get("configurable", {}).get("use_rag", True):
@@ -119,7 +121,20 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
 
     def route_after_review(state: State) -> str:
         last = state["messages"][-1]
-        return "agent" if isinstance(last, HumanMessage) and last.name == "reviewer" else END
+        return "agent" if isinstance(last, HumanMessage) and last.name == "reviewer" else "present"
+
+    def present(state: State) -> dict:
+        """Collect the exact tables the tools produced this turn (SPEC 4.2). Kept out of the model's memory."""
+        tables = []
+        for m in state["messages"][state["question_idx"] + 1:]:
+            if isinstance(m, ToolMessage):
+                try:
+                    out = json.loads(m.content)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(out, dict) and out.get("table"):
+                    tables.append(out["table"])
+        return {"tables": tables}
 
     g = StateGraph(State)
     g.add_node("precheck", precheck)
@@ -127,12 +142,14 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
     g.add_node("agent", agent)
     g.add_node("tools", ToolNode(CALC_TOOLS))
     g.add_node("review", review)
+    g.add_node("present", present)
     g.add_edge(START, "precheck")
     g.add_edge("precheck", "retrieve")
     g.add_edge("retrieve", "agent")
     g.add_conditional_edges("agent", route_after_agent, {"tools": "tools", "review": "review"})
     g.add_edge("tools", "agent")
-    g.add_conditional_edges("review", route_after_review, {"agent": "agent", END: END})
+    g.add_conditional_edges("review", route_after_review, {"agent": "agent", "present": "present"})
+    g.add_edge("present", END)
     return g.compile(checkpointer=checkpointer if checkpointer is not None else InMemorySaver())
 
 
@@ -160,7 +177,9 @@ def turn_trace(state: dict) -> dict:
                      "dense": h.get("dense"), "excerpt": h["text"][:300]} for i, h in enumerate(state.get("sources", []))],
         "rag_status": state.get("rag_status", ""), "best_dense": state.get("best_dense", 0.0),
         "review": state.get("review", {}), "revisions": state.get("revisions", 0),
-        "answer": text_of(final) if final else "",
+        "answer_text": text_of(final) if final else "",
+        "tables": state.get("tables", []),
+        "answer": "\n\n".join([text_of(final) if final else ""] + [to_markdown(t) for t in state.get("tables", [])]),
     }
 
 

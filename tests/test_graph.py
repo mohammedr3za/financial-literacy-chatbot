@@ -74,3 +74,15 @@ def test_conversation_memory_across_turns():
     fb.ask("And convexity?", thread_id="t1")
     second_input = all_model_text(type("M", (), {"calls": [model.calls[1]]}))
     assert "What is bond duration?" in second_input
+
+
+def test_tables_are_collected_and_appended_to_shown_answer_only():
+    fb, model = bot(tool_call("loan_emi", {"principal": 2000000, "annual_rate_pct": 8.5, "months": 240}, "c1"),
+                    "Your EMI is ₹17,356.46; the year-wise schedule is below.")
+    t = fb.ask("What EMI will I pay on a ₹20 lakh loan at 8.5% for 20 years?", thread_id="tbl")
+    assert len(t["tables"]) == 1 and "loan schedule" in t["tables"][0]["title"]
+    assert "| Year | Opening balance |" in t["answer"] and "| Year |" not in t["answer_text"]
+    # the table is not in the model's memory: the next turn's input must not contain it
+    model.responses.append("Sure.")
+    fb.ask("Thanks", thread_id="tbl")
+    assert "Opening balance" not in "\n".join(str(m.content) for m in model.calls[-1] if m.type == "ai")

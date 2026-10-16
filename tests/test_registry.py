@@ -21,3 +21,15 @@ def test_tool_error_is_returned_not_raised():
     assert "error" in out
     out = json.loads(TOOLS_BY_NAME["loan_emi"].invoke({"principal": -1, "annual_rate_pct": 8.5, "months": 240}))
     assert "error" in out and "lakh" in out["error"]
+
+
+def test_statement_tools_registered_and_accept_nested_items():
+    out = json.loads(TOOLS_BY_NAME["cash_flow_statement"].invoke({
+        "net_income": 100, "non_cash_items": [{"item": "Depreciation", "amount": 20}],
+        "working_capital": [{"item": "Stock", "type": "current_asset", "opening": 50, "closing": 40}],
+        "opening_cash": 10}))
+    assert out["result"]["cfo"] == 130 and out["result"]["computed_closing_cash"] == 140
+    out = json.loads(TOOLS_BY_NAME["financial_ratios"].invoke({"current_assets": 300, "current_liabilities": 150}))
+    assert out["result"]["current_ratio"] == 2.0
+    out = json.loads(TOOLS_BY_NAME["balance_sheet_check"].invoke({"assets": {"Cash": 10}, "liabilities": {}, "equity": {"Capital": 10}}))
+    assert out["result"]["balanced"] is True

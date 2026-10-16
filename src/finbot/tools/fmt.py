@@ -27,3 +27,27 @@ def inr_words(value: float) -> str:
     if a >= 1e5:
         return f"{sign}₹{a / 1e5:.2f} lakh"
     return format_inr(value)
+
+
+def group(value: float, decimals: int = 0) -> str:
+    """Indian digit grouping for table cells, accounting style: negatives in brackets, no currency sign."""
+    if value is None:
+        return ""
+    body = format_inr(abs(value), decimals)[1:]
+    return f"({body})" if round(value, decimals) < 0 else body
+
+
+MAX_TABLE_ROWS = 60
+
+
+def make_table(title: str, columns: list[str], body: list[list[str]], total: list[str] | None = None,
+               note: str | None = None, bold_rows: list[int] | None = None) -> dict:
+    """A table for the UI and the markdown answer. Cells are already formatted strings."""
+    n = len(body)
+    if n > MAX_TABLE_ROWS:
+        body = body[:MAX_TABLE_ROWS]
+        note = (note + " " if note else "") + f"Showing the first {MAX_TABLE_ROWS} of {n} rows."
+    rows = body + ([total] if total else [])
+    bold = sorted(set((bold_rows or []) + ([len(rows) - 1] if total else [])))
+    return {"title": title, "columns": columns, "rows": rows, "bold_rows": bold, "note": note,
+            "align": ["left"] + ["right"] * (len(columns) - 1)}

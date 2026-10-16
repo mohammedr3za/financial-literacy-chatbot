@@ -70,3 +70,14 @@ def test_concept_question_has_no_risk_flags():
 ])
 def test_concept_question_flag(text, expected):
     assert precheck(text).flags["concept_question"] is expected
+
+
+def test_pasted_statement_is_detected_and_not_annotated():
+    text = "Balance sheet (₹ lakh)\nCash\t1,20,000\nInventory\t2,50,000\nCurrent liabilities\t1,80,000\nCompute the current ratio"
+    r = precheck(text)
+    assert r.flags["statement_data"] and r.flags["calculation_intent"]
+    assert "(= " not in r.text
+
+
+def test_plain_question_with_grouped_amount_still_annotated():
+    assert "(= 120000)" in precheck("Is ₹1,20,000 enough for an emergency fund?").text

@@ -4,10 +4,13 @@ Each tool returns a JSON string. Bad input returns {"error": ...} so the model c
 correct itself instead of the graph crashing.
 """
 import json
+from typing import Literal
 
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
 from . import calculators as C
+from . import statements as S
 from .math_engine import calculate as _calculate
 from .math_engine import solve_equation as _solve_equation
 
@@ -134,5 +137,89 @@ def solve_equation(equation: str, solve_for: str) -> str:
     return _run(_solve_equation, equation=equation, solve_for=solve_for)
 
 
-CALC_TOOLS = [loan_emi, sip_future_value, tvm, npv_irr, bond_metrics, black_scholes, calculate, solve_equation]
+class LineItem(BaseModel):
+    item: str = Field(description="Line item name, e.g. Depreciation or Purchase of machinery")
+    amount: float = Field(description="Amount as given. Inflows and add-backs positive, outflows negative.")
+
+
+class WorkingCapitalItem(BaseModel):
+    item: str = Field(description="Line item name, e.g. Trade receivables")
+    type: Literal["current_asset", "current_liability"] = Field(description="current_asset or current_liability")
+    change: float | None = Field(default=None, description="Closing minus opening balance. Give this, or opening and closing.")
+    opening: float | None = Field(default=None, description="Opening balance")
+    closing: float | None = Field(default=None, description="Closing balance")
+
+
+@tool(parse_docstring=True)
+def financial_ratios(current_assets: float | None = None, current_liabilities: float | None = None,
+                     inventory: float | None = None, cash: float | None = None, receivables: float | None = None,
+                     payables: float | None = None, total_assets: float | None = None,
+                     total_liabilities: float | None = None, total_equity: float | None = None,
+                     total_debt: float | None = None, revenue: float | None = None, cogs: float | None = None,
+                     gross_profit: float | None = None, ebit: float | None = None, interest_expense: float | None = None,
+                     net_income: float | None = None, operating_cash_flow: float | None = None,
+                     capex: float | None = None, depreciation: float | None = None) -> str:
+    """Financial ratios from balance sheet and profit-and-loss items: liquidity, leverage, profitability, efficiency, cash flow and DuPont, each with its formula.
+
+    Pass only the items you have, exactly as given, in the same units (do not convert lakh or crore).
+
+    Args:
+        current_assets: Total current assets.
+        current_liabilities: Total current liabilities.
+        inventory: Inventory or stock.
+        cash: Cash and cash equivalents.
+        receivables: Trade receivables or debtors.
+        payables: Trade payables or creditors.
+        total_assets: Total assets.
+        total_liabilities: Total liabilities (current plus non-current).
+        total_equity: Shareholders' equity or net worth.
+        total_debt: Borrowings (short-term plus long-term debt).
+        revenue: Revenue from operations or sales.
+        cogs: Cost of goods sold.
+        gross_profit: Gross profit, if COGS is not given.
+        ebit: Operating profit, or earnings before interest and tax.
+        interest_expense: Finance costs or interest expense.
+        net_income: Net profit after tax.
+        operating_cash_flow: Net cash from operating activities.
+        capex: Capital expenditure (purchase of fixed assets), as a positive number.
+        depreciation: Depreciation and amortisation.
+    """
+    items = {k: v for k, v in locals().items() if v is not None}
+    return _run(S.financial_ratios, **items)
+
+
+@tool(parse_docstring=True)
+def balance_sheet_check(assets: dict[str, float], liabilities: dict[str, float], equity: dict[str, float]) -> str:
+    """Check whether a balance sheet balances, with section totals and a common-size view (% of total assets).
+
+    Args:
+        assets: Asset line items and amounts, e.g. {"Cash": 50000, "Inventory": 40000}.
+        liabilities: Liability line items and amounts.
+        equity: Equity line items and amounts, e.g. {"Share capital": 100000, "Reserves": 50000}.
+    """
+    return _run(S.balance_sheet_check, assets=assets, liabilities=liabilities, equity=equity)
+
+
+@tool(parse_docstring=True)
+def cash_flow_statement(net_income: float, non_cash_items: list[LineItem] | None = None,
+                        working_capital: list[WorkingCapitalItem] | None = None, investing: list[LineItem] | None = None,
+                        financing: list[LineItem] | None = None, opening_cash: float | None = None,
+                        closing_cash: float | None = None) -> str:
+    """Prepare a cash flow statement by the indirect method, with CFO, CFI, CFF, net change and a closing-cash reconciliation.
+
+    Args:
+        net_income: Net profit after tax (or before tax, if tax paid is listed under non-cash or operating items).
+        non_cash_items: Add-backs and deductions, e.g. Depreciation +, Profit on sale of asset −.
+        working_capital: Changes in current assets and current liabilities; give change, or opening and closing.
+        investing: Investing cash flows: purchases negative, sales positive.
+        financing: Financing cash flows: borrowings and share issues positive, repayments and dividends negative.
+        opening_cash: Cash at the start of the period.
+        closing_cash: Cash at the end of the period, if given, to check the statement reconciles.
+    """
+    return _run(S.cash_flow_statement, net_income=net_income, non_cash_items=non_cash_items, working_capital=working_capital,
+                investing=investing, financing=financing, opening_cash=opening_cash, closing_cash=closing_cash)
+
+
+CALC_TOOLS = [loan_emi, sip_future_value, tvm, npv_irr, bond_metrics, black_scholes, calculate, solve_equation,
+              financial_ratios, balance_sheet_check, cash_flow_statement]
 TOOLS_BY_NAME = {t.name: t for t in CALC_TOOLS}

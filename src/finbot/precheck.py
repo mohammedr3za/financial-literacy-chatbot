@@ -56,6 +56,12 @@ def _plain(v: float) -> str:
     return str(int(v)) if float(v).is_integer() else f"{v:.2f}"
 
 
+def is_tabular(text: str) -> bool:
+    """Pasted statements: several lines carrying numbers, or table separators."""
+    numeric_lines = [ln for ln in text.splitlines() if re.search(r"\d", ln)]
+    return len(numeric_lines) >= 3 and ("|" in text or "\t" in text or len(numeric_lines) >= 4)
+
+
 def normalize_amounts(text: str) -> tuple[str, list[dict]]:
     found: list[dict] = []
 
@@ -70,7 +76,8 @@ def normalize_amounts(text: str) -> tuple[str, list[dict]]:
         return f"{m.group(0)} (= {_plain(value)})"
 
     text = _WORD_AMOUNT.sub(word, text)
-    text = _GROUPED.sub(grouped, text)
+    if not is_tabular(text):  # in a pasted table, annotating every cell only adds noise
+        text = _GROUPED.sub(grouped, text)
     return text, found
 
 
@@ -85,6 +92,9 @@ _HIGH_RISK = re.compile(r"(?i)\b(crypto\w*|bitcoin|ethereum|btc|eth|nfts?|f&o|fu
 _CALC = re.compile(r"(?i)\b(calculate|compute|how much|what (will|would) (be|i|my)|emi|sip|future value|present value|maturity|"
                    r"cagr|irr|npv|ytm|yield|bond price|price of (a|the) bond|option price|black[- ]scholes|interest on|returns? on|"
                    r"total interest|corpus|duration of|break[- ]?even|percent(age)? of|% of|gst)\b")
+_STATEMENT = re.compile(r"(?i)\b(balance sheet|profit (and|&) loss|p&l|income statement|cash flow statement|cash flows?|"
+                        r"ratios?|working capital|current assets?|current liabilit\w+|reserves and surplus|net worth|ebitda|ebit|"
+                        r"debtors|creditors|depreciation|dupont|roe|roa|liquidity|leverage)\b")
 _REGULATORY = re.compile(r"(?i)\b(sebi|rbi|amfi|dicgc|tax\w*|tds|section \d+\w*|rule|regulation|regulat\w+|law|legal|illegal|allowed|"
                          r"ombudsman|complaint|insur\w+|kyc|registered|licen[cs]\w*|circular|guideline|compliance)\b")
 _INVEST = re.compile(r"(?i)\b(invest\w*|stocks?|shares?|equity|mutual funds?|sip|returns?|portfolio|ipo|bonds?|fd|fixed deposit|"
@@ -108,11 +118,13 @@ def precheck(user_text: str) -> PrecheckResult:
     clean, redactions = redact(user_text)
     normalized, amounts = normalize_amounts(clean)
     has_number = bool(re.search(r"\d", clean.replace("[REDACTED", "")))
+    statement = bool(_STATEMENT.search(clean)) and has_number or is_tabular(clean)
     flags = {
+        "statement_data": statement,
         "guarantee_seeking": bool(_GUARANTEE.search(clean)),
         "personal_advice_request": bool(_ADVICE.search(clean)),
         "high_risk_topic": bool(_HIGH_RISK.search(clean)),
-        "calculation_intent": bool(_CALC.search(clean)) and has_number,
+        "calculation_intent": (bool(_CALC.search(clean)) and has_number) or statement,
         "regulatory_topic": bool(_REGULATORY.search(clean)),
         "investment_topic": bool(_INVEST.search(clean) or _HIGH_RISK.search(clean)),
         "concept_question": bool(_CONCEPT.search(clean)) and not _PERSONAL.search(clean),

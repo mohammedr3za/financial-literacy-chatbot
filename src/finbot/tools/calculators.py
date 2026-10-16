@@ -4,7 +4,7 @@ No eval/exec anywhere.
 """
 import math
 
-from .fmt import format_inr, inr_words
+from .fmt import format_inr, group, inr_words, make_table
 
 
 def _out(inputs: dict, formula: str, result: dict, money_keys=()) -> dict:
@@ -48,13 +48,26 @@ def loan_emi(principal: float, annual_rate_pct: float, months: int) -> dict:
         yp += emi - interest
         bal -= emi - interest
     total = emi * months
-    return _out(
+    body, b, t_paid, t_int, t_prin, year = [], principal, 0.0, 0.0, 0.0, 0
+    for start in range(0, months, 12):
+        year += 1
+        opening, paid, interest_y, prin_y = b, 0.0, 0.0, 0.0
+        for _ in range(min(12, months - start)):
+            i_amt = b * r
+            paid, interest_y, prin_y, b = paid + emi, interest_y + i_amt, prin_y + emi - i_amt, b - (emi - i_amt)
+        t_paid, t_int, t_prin = t_paid + paid, t_int + interest_y, t_prin + prin_y
+        body.append([str(year), group(opening), group(paid), group(interest_y), group(prin_y), group(b if abs(b) >= 0.5 else 0)])
+    table = make_table("Year-wise loan schedule (₹)", ["Year", "Opening balance", "EMI paid", "Interest", "Principal", "Closing balance"],
+                       body, total=["Total", "", group(t_paid), group(t_int), group(t_prin), ""])
+    out = _out(
         {"principal": principal, "annual_rate_pct": annual_rate_pct, "months": months},
         "EMI = P·r·(1+r)^n / ((1+r)^n − 1), r = annual rate / 12, n = months",
         {"emi": round(emi, 2), "total_payment": round(total, 2), "total_interest": round(total - principal, 2),
          "first_year_interest": round(yi, 2), "first_year_principal": round(yp, 2)},
         money_keys=("emi", "total_payment", "total_interest", "first_year_interest", "first_year_principal"),
     )
+    out["table"] = table
+    return out
 
 
 # ---------------------------------------------------------------- SIP
@@ -65,18 +78,28 @@ def sip_future_value(monthly: float, annual_return_pct: float, years: float, ste
     i = annual_return_pct / 1200
     n = round(years * 12)
     bal, invested, pay = 0.0, 0.0, monthly
+    body, year_inv = [], 0.0
     for m in range(n):
         if m and m % 12 == 0:
             pay *= 1 + step_up_pct / 100
         bal = (bal + pay) * (1 + i)   # deposit at the start of the month, then a month of growth
         invested += pay
-    return _out(
+        year_inv += pay
+        if (m + 1) % 12 == 0 or m == n - 1:
+            body.append([str((m // 12) + 1), group(pay), group(year_inv), group(invested), group(bal), group(bal - invested)])
+            year_inv = 0.0
+    table = make_table("Year-wise SIP growth (₹)", ["Year", "Monthly SIP", "Invested in year", "Total invested",
+                                                    "Value at year end", "Gain"], body,
+                       note="Assumes the stated return every year; actual returns vary and are not guaranteed.")
+    out = _out(
         {"monthly": monthly, "annual_return_pct": annual_return_pct, "years": years, "step_up_pct": step_up_pct},
         "FV = P·((1+i)^n − 1)/i·(1+i), i = annual return / 12, n = months (deposit at start of month); "
         "with step-up, the monthly amount rises by step_up_pct each year",
         {"corpus": round(bal, 2), "invested": round(invested, 2), "gain": round(bal - invested, 2)},
         money_keys=("corpus", "invested", "gain"),
     )
+    out["table"] = table
+    return out
 
 
 # ---------------------------------------------------------------- TVM
@@ -93,7 +116,38 @@ def _tvm_fv(rate_per: float, n: float, pv: float, pmt: float, due: int) -> float
         return math.inf
 
 
-def tvm(solve_for: str, annual_rate_pct: float | None = None, years: float | None = None,
+def _tvm_table(rate_pct: float, years: float, pv: float, pmt: float, m: int, due: int) -> dict | None:
+    if years is None or years <= 0 or years > 200:
+        return None
+    i, n = rate_pct / 100 / m, int(round(years * m))
+    body, b, t_dep, t_growth = [], pv, 0.0, 0.0
+    opening, dep_y = b, 0.0
+    for k in range(n):
+        b = (b + pmt) * (1 + i) if due else b * (1 + i) + pmt
+        dep_y += pmt
+        if (k + 1) % m == 0 or k == n - 1:
+            growth = b - opening - dep_y
+            body.append([str(k // m + 1), group(opening, 2), group(dep_y, 2), group(growth, 2), group(b, 2)])
+            t_dep, t_growth, opening, dep_y = t_dep + dep_y, t_growth + growth, b, 0.0
+    return make_table("Year-wise growth (₹)", ["Year", "Opening", "Deposits", "Growth", "Closing"], body,
+                      total=["Total", group(pv, 2), group(t_dep, 2), group(t_growth, 2), group(b, 2)])
+
+
+def tvm(*args, **kwargs) -> dict:
+    out = _tvm_solve(*args, **kwargs)
+    inp, res = out["inputs"], out["result"]
+    rate = res.get("annual_rate_pct", inp["annual_rate_pct"])
+    years = res.get("years", inp["years"])
+    pv = res.get("pv", inp["pv"])
+    pmt = res.get("pmt", inp["pmt"])
+    if rate is not None:
+        table = _tvm_table(rate, years, pv, pmt, inp["periods_per_year"], 1 if inp["when"] == "begin" else 0)
+        if table:
+            out["table"] = table
+    return out
+
+
+def _tvm_solve(solve_for: str, annual_rate_pct: float | None = None, years: float | None = None,
         pv: float = 0.0, pmt: float = 0.0, fv: float | None = None,
         periods_per_year: int = 1, when: str = "end") -> dict:
     _require(solve_for in _TVM_TARGETS, f"solve_for must be one of {_TVM_TARGETS}.")
@@ -172,8 +226,23 @@ def npv_irr(cashflows: list[float], discount_rate_pct: float | None = None) -> d
         note = "IRR is undefined because the cash flows never change sign."
     if note:
         result["note"] = note
-    return _out({"cashflows": cf, "discount_rate_pct": discount_rate_pct},
-                "NPV = Σ CF_t/(1+r)^t ; IRR is the r where NPV = 0", result, ("npv",))
+    out = _out({"cashflows": cf, "discount_rate_pct": discount_rate_pct},
+               "NPV = Σ CF_t/(1+r)^t ; IRR is the r where NPV = 0", result, ("npv",))
+    rate = discount_rate_pct if discount_rate_pct is not None else result["irr_pct"]
+    body, cum, cum_pv = [], 0.0, 0.0
+    for t, c in enumerate(cf):
+        cum += c
+        if rate is None:
+            body.append([str(t), group(c, 2), group(cum, 2), "–", "–", "–"])
+            continue
+        df = 1 / (1 + rate / 100) ** t
+        cum_pv += c * df
+        body.append([str(t), group(c, 2), group(cum, 2), f"{df:.4f}", group(c * df, 2), group(cum_pv, 2)])
+    label = (f"discounted at {discount_rate_pct}%" if discount_rate_pct is not None
+             else f"discounted at the IRR, {result['irr_pct']}%" if result["irr_pct"] is not None else "undiscounted")
+    out["table"] = make_table(f"Cash flows by year (₹, {label})",
+                              ["Year", "Cash flow", "Cumulative cash flow", "Discount factor", "Present value", "Cumulative PV"], body)
+    return out
 
 
 # ---------------------------------------------------------------- bonds
@@ -201,13 +270,27 @@ def bond_metrics(face: float, coupon_pct: float, years: float, freq: int = 1,
         _require(price > 0, "price must be positive.")
         y = _bisect(lambda yy: _bond_price_dur(face, coupon_pct, n, freq, yy)[0] - price, -0.5, 5.0)
         p, mac, mod = _bond_price_dur(face, coupon_pct, n, freq, y)
-    return _out(
+    c, yp = face * coupon_pct / 100 / freq, y / freq
+    body, t_cf, t_pv, t_tpv = [], 0.0, 0.0, 0.0
+    for t in range(1, n + 1):
+        cf = c + (face if t == n else 0)
+        df = 1 / (1 + yp) ** t
+        pv_t = cf * df
+        t_cf, t_pv, t_tpv = t_cf + cf, t_pv + pv_t, t_tpv + (t / freq) * pv_t
+        body.append([str(t), f"{t / freq:g}", group(cf, 2), f"{df:.4f}", group(pv_t, 2), group((t / freq) * pv_t, 2)])
+    table = make_table("Bond cash flows and duration", ["Period", "Time (years)", "Cash flow", "Discount factor",
+                                                        "Present value", "Time × PV"], body,
+                       total=["Total", "", group(t_cf, 2), "", group(t_pv, 2), group(t_tpv, 2)],
+                       note="Price = total present value. Macaulay duration = total Time × PV ÷ Price.")
+    out = _out(
         {"face": face, "coupon_pct": coupon_pct, "years": years, "freq": freq, "ytm_pct": ytm_pct, "price": price},
         "Price = Σ C/(1+y/f)^t + F/(1+y/f)^N ; Macaulay D = Σ (t/f)·PV_t / Price ; Modified D = D/(1+y/f)",
         {"price": round(p, 4), "ytm_pct": round(y * 100, 6), "current_yield_pct": round(face * coupon_pct / p, 4),
          "macaulay_duration": round(mac, 4), "modified_duration": round(mod, 4)},
         ("price",),
     )
+    out["table"] = table
+    return out
 
 
 # ---------------------------------------------------------------- Black-Scholes
@@ -238,10 +321,20 @@ def black_scholes(spot: float, strike: float, years: float, rate_pct: float, vol
         rho = -strike * T * disc * _ncdf(-d2) / 100
     gamma = _npdf(d1) / (spot * s * math.sqrt(T))
     vega = spot * _npdf(d1) * math.sqrt(T) / 100
-    return _out(
+    table = make_table(f"Black-Scholes {kind}: price and Greeks", ["Measure", "Value", "Meaning"], [
+        ["Price", f"{price:.4f}", "Fair value of the option"],
+        ["Delta", f"{delta:.4f}", "Change in option price per 1 unit move in the spot price"],
+        ["Gamma", f"{gamma:.6f}", "Change in delta per 1 unit move in the spot price"],
+        ["Vega", f"{vega:.4f}", "Change in price per 1 percentage point of volatility"],
+        ["Theta", f"{theta / 365:.4f}", "Change in price per day as expiry approaches"],
+        ["Rho", f"{rho:.4f}", "Change in price per 1 percentage point of interest rate"],
+    ])
+    out = _out(
         {"spot": spot, "strike": strike, "years": years, "rate_pct": rate_pct, "vol_pct": vol_pct, "kind": kind},
         "d1 = (ln(S/K) + (r + σ²/2)T)/(σ√T), d2 = d1 − σ√T ; Call = S·N(d1) − K·e^(−rT)·N(d2) ; Put = K·e^(−rT)·N(−d2) − S·N(−d1)",
         {"price": round(price, 4), "delta": round(delta, 4), "gamma": round(gamma, 6), "vega_per_1pct": round(vega, 4),
          "theta_per_year": round(theta, 4), "theta_per_day": round(theta / 365, 4), "rho_per_1pct": round(rho, 4),
          "d1": round(d1, 4), "d2": round(d2, 4)},
     )
+    out["table"] = table
+    return out

@@ -1,0 +1,81 @@
+"""Financial-statement tools (SPEC 4.1). Reference company and cash flow problem worked by hand."""
+import pytest
+
+from finbot.tools.statements import balance_sheet_check, cash_flow_statement, financial_ratios
+
+CO = dict(current_assets=200_000, current_liabilities=100_000, inventory=50_000, cash=30_000, total_assets=500_000,
+          total_liabilities=200_000, total_equity=300_000, total_debt=150_000, revenue=600_000, cogs=360_000, ebit=90_000,
+          interest_expense=15_000, net_income=50_000, receivables=60_000, payables=40_000, operating_cash_flow=70_000,
+          capex=25_000, depreciation=20_000)
+
+
+def test_ratios_reference_company():
+    r = financial_ratios(**CO)["result"]
+    expected = {"current_ratio": 2.0, "quick_ratio": 1.5, "cash_ratio": 0.3, "working_capital": 100_000, "debt_to_equity": 0.5,
+                "debt_ratio": 0.4, "equity_multiplier": 1.6667, "interest_coverage": 6.0, "gross_margin_pct": 40.0,
+                "operating_margin_pct": 15.0, "net_margin_pct": 8.3333, "roa_pct": 10.0, "roe_pct": 16.6667, "asset_turnover": 1.2,
+                "inventory_turnover": 7.2, "days_inventory": 50.6944, "days_sales_outstanding": 36.5, "days_payables": 40.5556,
+                "free_cash_flow": 45_000, "ebitda": 110_000}
+    for k, v in expected.items():
+        assert r[k] == pytest.approx(v, abs=1e-3), k
+    assert r["dupont_roe_pct"] == pytest.approx(r["roe_pct"], abs=1e-6)
+
+
+def test_ratios_partial_inputs_compute_what_they_can():
+    out = financial_ratios(current_assets=150, current_liabilities=100)
+    assert out["result"] == {"current_ratio": 1.5, "working_capital": 50.0}
+    assert out["table"]["rows"][0][1] == "Current ratio"
+
+
+def test_ratios_need_two_items():
+    with pytest.raises(ValueError):
+        financial_ratios(revenue=100)
+
+
+def test_ratio_table_has_formulas():
+    rows = financial_ratios(**CO)["table"]["rows"]
+    row = next(r for r in rows if r[1] == "Return on equity")
+    assert row[2] == "Net income ÷ Total equity" and row[3] == "16.67%"
+
+
+def test_balance_sheet_balances_and_common_size():
+    out = balance_sheet_check(assets={"Cash": 50_000, "Receivables": 30_000, "Inventory": 40_000, "Plant": 180_000},
+                              liabilities={"Payables": 40_000, "Bank loan": 110_000},
+                              equity={"Share capital": 100_000, "Reserves": 50_000})
+    r = out["result"]
+    assert r["total_assets"] == 300_000 and r["balanced"] and r["difference"] == 0
+    plant = next(row for row in out["table"]["rows"] if row[1] == "Plant")
+    assert plant[3] == "60.0%"
+
+
+def test_balance_sheet_difference_reported():
+    r = balance_sheet_check(assets={"Cash": 100}, liabilities={"Loan": 50}, equity={"Capital": 40})["result"]
+    assert not r["balanced"] and r["difference"] == 10
+
+
+def test_cash_flow_indirect_method_reconciles():
+    out = cash_flow_statement(
+        net_income=50_000,
+        non_cash_items=[{"item": "Depreciation", "amount": 10_000}],
+        working_capital=[{"item": "Receivables", "type": "current_asset", "change": 5_000},
+                         {"item": "Inventory", "type": "current_asset", "opening": 23_000, "closing": 20_000},
+                         {"item": "Payables", "type": "current_liability", "change": 4_000}],
+        investing=[{"item": "Purchase of equipment", "amount": -30_000}, {"item": "Sale of investments", "amount": 8_000}],
+        financing=[{"item": "Loan raised", "amount": 20_000}, {"item": "Dividends paid", "amount": -12_000}],
+        opening_cash=15_000, closing_cash=63_000)
+    r = out["result"]
+    assert (r["cfo"], r["cfi"], r["cff"], r["net_change"], r["computed_closing_cash"]) == (62_000, -22_000, 8_000, 48_000, 63_000)
+    assert r["reconciles"] is True
+    rows = out["table"]["rows"]
+    assert any(row[1] == "Increase in Receivables" and row[2] == "(5,000)" for row in rows)
+    assert any(row[1] == "Decrease in Inventory" and row[2] == "3,000" for row in rows)
+
+
+def test_cash_flow_flags_mismatch():
+    r = cash_flow_statement(net_income=100, opening_cash=0, closing_cash=150)["result"]
+    assert r["reconciles"] is False and r["unexplained_difference"] == 50
+
+
+def test_working_capital_item_needs_change_or_balances():
+    with pytest.raises(ValueError):
+        cash_flow_statement(net_income=1, working_capital=[{"item": "Stock", "type": "current_asset"}])
