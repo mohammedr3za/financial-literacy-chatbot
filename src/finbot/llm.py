@@ -28,10 +28,10 @@ def get_runnables(tools: list, settings: Settings | None = None):
     """(plain model, model with tools). With the GPU backend, each falls back to the local Ollama model on any error
     (unreachable tunnel, timeout, server error), so the booth keeps working offline (SPEC section 2)."""
     s = settings or get_settings()
+    from .tools.schemas import compact_tool_schemas
     if s.backend != "openai":
         m = _ollama(s.model, s.base_url, s)
-        return m, m.bind_tools(tools)
-    from .tools.schemas import compact_tool_schemas
+        return m, m.bind_tools(compact_tool_schemas(tools) if s.compact_tools_ollama else tools)
     primary = _openai(s)
     compact = compact_tool_schemas(tools)   # vLLM renders schemas into the 16k context: send the compact copies (SPEC 3.1)
     if not _has_fallback(s):  # e.g. on the GPU box itself

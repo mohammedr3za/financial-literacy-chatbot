@@ -37,10 +37,11 @@ def tool_names() -> set[str]:
 
 
 def current_tools():
-    """The tool definitions the served model sees now; every example is re-tagged with them."""
-    from langchain_core.utils.function_calling import convert_to_openai_tool
+    """The tool definitions the fine-tuned model is served with (compact schemas, FINBOT_COMPACT_TOOLS=on): the ones the
+    vLLM teacher saw, about 4k tokens shorter than the full ones (SPEC 3.1). Every example is re-tagged with them."""
     from finbot.tools.registry import CALC_TOOLS, TOOLS_BY_NAME
-    return [convert_to_openai_tool(t) for t in CALC_TOOLS], TOOLS_BY_NAME
+    from finbot.tools.schemas import compact_tool_schemas
+    return compact_tool_schemas(CALC_TOOLS), TOOLS_BY_NAME
 
 
 def calls_valid(rec: dict, by_name: dict) -> bool:

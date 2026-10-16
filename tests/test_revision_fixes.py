@@ -95,3 +95,14 @@ def test_prune_figures_drops_sentences_rows_and_empty_headings():
     assert "**Risks**" in out and "* Volatile." in out and "* No cash flows." in out
     assert "| 2 | flat |" in out and "Intro without numbers stays here." in out
     assert prune_figures(text, []) == text
+
+
+# ---------- compact tool schemas on Ollama (finbot-8b-v2 was trained with them)
+def test_ollama_sends_full_schemas_unless_compact_tools_is_on():
+    from finbot.llm import get_runnables
+    from finbot.tools.registry import CALC_TOOLS
+    from finbot.tools.schemas import compact_tool_schemas
+    _, full = get_runnables(CALC_TOOLS, Settings(backend="ollama"))
+    _, compact = get_runnables(CALC_TOOLS, Settings(backend="ollama", compact_tools_ollama=True))
+    assert compact.kwargs["tools"] == compact_tool_schemas(CALC_TOOLS)
+    assert len(str(full.kwargs["tools"])) > len(str(compact.kwargs["tools"])) * 1.3

@@ -21,6 +21,8 @@ class Settings:
     max_output_tokens_openai: int = field(default_factory=lambda: int(os.getenv("FINBOT_MAX_OUTPUT_TOKENS_OPENAI", "1500")))
     max_output_tokens_ollama: int = field(default_factory=lambda: int(
         os.getenv("FINBOT_MAX_OUTPUT_TOKENS_OLLAMA") or os.getenv("FINBOT_MAX_OUTPUT_TOKENS") or "700"))
+    # compact tool schemas on Ollama (always on vLLM; SPEC 3.1): finbot-8b-v2 was trained with them
+    compact_tools_ollama: bool = field(default_factory=lambda: os.getenv("FINBOT_COMPACT_TOOLS", "off").lower() == "on")
     fallback_model: str = field(default_factory=lambda: os.getenv("FINBOT_FALLBACK_MODEL", "qwen3:8b"))
     fallback_url: str = field(default_factory=lambda: os.getenv("FINBOT_FALLBACK_URL", "http://localhost:11434"))
     request_timeout: float = field(default_factory=lambda: float(os.getenv("FINBOT_TIMEOUT", "180")))
