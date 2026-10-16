@@ -42,8 +42,9 @@ if ! command -v cloudflared >/dev/null; then
   curl -fsSL -o /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
   sudo dpkg -i /tmp/cloudflared.deb >/dev/null
 fi
-pkill -f "cloudflared tunnel" 2>/dev/null || true
-nohup cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080 > ~/tunnel.log 2>&1 &
+pkill -f "[c]loudflared tunnel --no-autoupdate.*--url" 2>/dev/null || true
+: > ~/cloudflared-empty.yml   # Lambda images run their own cloudflared whose /etc/cloudflared/config.yml would 404 everything
+nohup cloudflared tunnel --no-autoupdate --config ~/cloudflared-empty.yml --url http://127.0.0.1:8080 > ~/tunnel.log 2>&1 &
 for i in $(seq 1 40); do URL=$(grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" ~/tunnel.log | head -1); [ -n "$URL" ] && break; sleep 1; done
 echo "TUNNEL_URL=$URL"
 REMOTE
