@@ -217,7 +217,7 @@ def test_project_tool_is_registered_and_strict():
     assert out["result"]["npv"] == pytest.approx(50_000)
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
-        TOOLS_BY_NAME["project_cash_flows"].invoke({**EXPANSION, "marketing_study": 235000})
+        TOOLS_BY_NAME["project_cash_flows"].invoke({**EXPANSION, "marketing_study": 120000})
 
 
 # ---------- grounding: number words, millions and cents
@@ -267,15 +267,16 @@ def test_project_and_annuity_hints():
 
 
 def test_answer_format_notes_do_not_make_a_question_a_statement():
+    # several lettered parts, each followed by a formatting note that carries numbers (4+ numeric lines)
     q = ("Suppose you will receive $5,000 per year for 4 years and the rate is 6 percent.\n\na-1. What is the present value "
-         "as an ordinary annuity?\nNote: Round your answer to 2 decimal places, e.g., 32.16.\na-2. What is it as an annuity "
-         "due?\nNote: Round your answer to 2 decimal places, e.g., 32.16.\nb. What is the future value?\nNote: Round your "
-         "answer to 2 decimal places, e.g., 32.16.")
+         "as an ordinary annuity?\nNote: Give 2 decimals (for example 45.67).\na-2. What is it as an annuity "
+         "due?\nNote: Give 2 decimals (for example 45.67).\nb. What is the future value?\nNote: Give "
+         "2 decimals (for example 45.67).")
     f = precheck(q).flags
     assert f["calc_types"] == ["annuity"] and not f["statement_data"]
-    loan = ("Prepare an amortization schedule for a three-year loan of $24,000. The interest rate is 9 percent per year and "
-            "the loan calls for equal annual payments.\nNote: Round to 2 decimal places, e.g., 32.16.\nb. Interest in year 2?\n"
-            "Note: Round to 2 decimal places, e.g., 32.16.\nc. Total interest?\nNote: Round to 2 decimal places, e.g., 32.16.")
+    loan = ("Set out the repayment table for a $24,000 loan over three years at 9 percent a year, repaid with equal annual "
+            "payments.\nNote: Give 2 decimals (for example 45.67).\nb. Interest in year 2?\n"
+            "Note: Give 2 decimals (for example 45.67).\nc. Total interest?\nNote: Give 2 decimals (for example 45.67).")
     assert precheck(loan).flags["calc_types"] == ["loan"]
     pasted = "Balance sheet\n| Item | Amount |\n| Cash | 1,20,000 |\n| Inventory | 2,50,000 |\n| Current liabilities | 1,80,000 |"
     assert precheck(pasted + "\nCompute the current ratio").flags["statement_data"]

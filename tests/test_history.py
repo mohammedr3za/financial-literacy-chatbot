@@ -62,15 +62,16 @@ def test_followup_sees_previous_question_answer_and_inputs():
 
 
 def test_followup_grounding_uses_the_previous_turn():
-    q1 = "Sales are $675,000, costs $410,000, depreciation $65,000, interest $35,000 and the tax rate 23 percent. What is net income?"
-    args = {"sales": 675000, "costs": 410000, "depreciation": 65000, "interest": 35000, "targets": ["net_income"]}
-    model = ScriptedModel(responses=[tool_call("solve_financials", {**args, "tax_rate_pct": 23}, "c1"), "Net income is $127,050.",
-                                     tool_call("solve_financials", {**args, "tax_rate_pct": 25}, "c2"), "Net income is $123,750."])
+    # EBT = 640,000 − 410,000 − 65,000 − 35,000 = 130,000; net income 130,000 × 0.80 = 104,000, or × 0.75 = 97,500 at 25%
+    q1 = "Sales are $640,000, costs $410,000, depreciation $65,000, interest $35,000 and the tax rate 20 percent. What is net income?"
+    args = {"sales": 640000, "costs": 410000, "depreciation": 65000, "interest": 35000, "targets": ["net_income"]}
+    model = ScriptedModel(responses=[tool_call("solve_financials", {**args, "tax_rate_pct": 20}, "c1"), "Net income is $104,000.",
+                                     tool_call("solve_financials", {**args, "tax_rate_pct": 25}, "c2"), "Net income is $97,500."])
     fb = FinBot(model=model, kb=make_kb())
     fb.ask(q1, thread_id="g")
     t = fb.ask("What if the tax rate were 25 percent?", thread_id="g")
     assert "error" not in t["tools"][0]["output"], t["tools"][0]["output"]
-    assert t["tools"][0]["output"]["result"]["net_income"] == 123750
+    assert t["tools"][0]["output"]["result"]["net_income"] == 97500
     assert t["flags"]["currency"] == "USD" and not t["flags"]["regulatory_topic"] and t["review"]["passed"]
 
 

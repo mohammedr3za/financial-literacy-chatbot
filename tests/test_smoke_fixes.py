@@ -44,13 +44,16 @@ def test_cents_passed_as_dollars_are_bounced():
 
 
 def test_derived_balance_sheet_total_gets_the_balancing_hint():
-    q = "Cash $6,292, receivables $8,190, inventory $14,538, net fixed assets $51,218, payables $4,624, long-term debt $20,770. Prepare the balance sheet."
+    # our own figures: total assets = 5,480 + 9,215 + 12,760 + 47,300 = 74,755; equity = 74,755 − 3,910 − 18,650 = 52,195
+    # (the first call passes the model's own, wrong, equity of 52,205, which is not in the question)
+    q = "Cash $5,480, receivables $9,215, inventory $12,760, net fixed assets $47,300, payables $3,910, long-term debt $18,650. Prepare the balance sheet."
+    assets = {"Cash": 5480, "Receivables": 9215, "Inventory": 12760, "Net fixed assets": 47300}
     model = ScriptedModel(responses=[
-        tool_call("balance_sheet_check", {"assets": {"Cash": 6292, "Receivables": 8190, "Inventory": 14538, "Net fixed assets": 51218},
-                                          "liabilities": {"Payables": 4624, "Long-term debt": 20770}, "equity": {"Total equity": 54854}}, "c1"),
-        tool_call("balance_sheet_check", {"assets": {"Cash": 6292, "Receivables": 8190, "Inventory": 14538, "Net fixed assets": 51218},
-                                          "liabilities": {"Payables": 4624, "Long-term debt": 20770}, "equity": {}}, "c2"),
-        "Total assets are $80,238 and equity, the balancing figure, is $54,844."])
+        tool_call("balance_sheet_check", {"assets": assets, "liabilities": {"Payables": 3910, "Long-term debt": 18650},
+                                          "equity": {"Total equity": 52205}}, "c1"),
+        tool_call("balance_sheet_check", {"assets": assets, "liabilities": {"Payables": 3910, "Long-term debt": 18650},
+                                          "equity": {}}, "c2"),
+        "Total assets are $74,755 and equity, the balancing figure, is $52,195."])
     t = FinBot(model=model, kb=make_kb()).ask(q, thread_id="bs")
     assert "{}" in t["tools"][0]["output"]["error"] and "balancing figure" in t["tools"][0]["output"]["error"]
     assert "error" not in t["tools"][1]["output"]

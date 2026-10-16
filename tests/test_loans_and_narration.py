@@ -7,8 +7,10 @@ from pydantic import ValidationError
 
 from finbot.tools.calculators import loan_emi
 
-SAILBOAT = ("You want to borrow $91,000 from your local bank to buy a new sailboat. You can afford to make monthly payments "
-            "of $1,750, but no more. Assuming monthly compounding, what is the highest rate you can afford on a 60-month APR loan?")
+# Our own scenario: $36,000 repaid by 48 monthly payments of $870 (total $41,760). The monthly rate that makes the
+# payments worth $36,000, found by the bisection below, is 0.62281%, so the APR is 7.47%.
+OVEN_LOAN = ("A bakery wants to borrow $36,000 to buy a commercial oven. It can afford monthly payments of at most $870. "
+             "If interest compounds monthly, what is the highest APR it can afford on a 48-month loan?")
 
 
 def pv_annuity(pmt, r, n):
@@ -24,13 +26,13 @@ def independent_monthly_rate(principal, pmt, n):
 
 
 # ---------- loan_emi solves whichever one value is missing
-def test_loan_solves_for_rate_sailboat():
-    r = loan_emi(principal=91_000, months=60, emi=1_750)["result"]
-    i = independent_monthly_rate(91_000, 1_750, 60)
-    assert round(r["annual_rate_pct"], 2) == round(i * 1200, 2) == 5.78
+def test_loan_solves_for_rate():
+    r = loan_emi(principal=36_000, months=48, emi=870)["result"]
+    i = independent_monthly_rate(36_000, 870, 48)
+    assert round(r["annual_rate_pct"], 2) == round(i * 1200, 2) == 7.47
     assert r["annual_rate_pct"] == pytest.approx(i * 1200, abs=1e-4)
     assert r["effective_annual_rate_pct"] == pytest.approx(((1 + i) ** 12 - 1) * 100, abs=1e-4)
-    assert r["solved_for"] == "annual_rate_pct" and r["total_payment"] == pytest.approx(105_000, abs=0.01)
+    assert r["solved_for"] == "annual_rate_pct" and r["total_payment"] == pytest.approx(41_760, abs=0.01)   # 48 × 870
 
 
 def test_loan_solves_for_principal():
@@ -54,10 +56,10 @@ def test_loan_emi_still_works_and_zero_rate_is_allowed_when_given():
 
 
 @pytest.mark.parametrize("kwargs,words", [
-    ({"principal": 91_000, "months": 60}, "exactly three"),
-    ({"principal": 91_000, "annual_rate_pct": 0, "months": 60, "emi": 1_750}, "Leave out"),
+    ({"principal": 36_000, "months": 48}, "exactly three"),
+    ({"principal": 36_000, "annual_rate_pct": 0, "months": 48, "emi": 870}, "Leave out"),
     ({"principal": 500_000, "annual_rate_pct": 10, "emi": 4_000}, "never be repaid"),
-    ({"principal": 91_000, "months": 60, "emi": 1_000}, "do not even repay"),
+    ({"principal": 36_000, "months": 48, "emi": 600}, "do not even repay"),          # 48 × 600 = 28,800 < 36,000
 ])
 def test_loan_bad_combinations_are_explained(kwargs, words):
     with pytest.raises(ValueError, match=words):
@@ -67,15 +69,15 @@ def test_loan_bad_combinations_are_explained(kwargs, words):
 def test_loan_tool_schema_is_strict_and_solves_rate():
     import json
     from finbot.tools.registry import TOOLS_BY_NAME
-    out = json.loads(TOOLS_BY_NAME["loan_emi"].invoke({"principal": 91000, "months": 60, "emi": 1750}))
-    assert round(out["result"]["annual_rate_pct"], 2) == 5.78
+    out = json.loads(TOOLS_BY_NAME["loan_emi"].invoke({"principal": 36000, "months": 48, "emi": 870}))
+    assert round(out["result"]["annual_rate_pct"], 2) == 7.47
     with pytest.raises(ValidationError):
-        TOOLS_BY_NAME["loan_emi"].invoke({"principal": 91000, "months": 60, "payment": 1750})
+        TOOLS_BY_NAME["loan_emi"].invoke({"principal": 36000, "months": 48, "payment": 870})
 
 
 # ---------- routing
 @pytest.mark.parametrize("q", [
-    SAILBOAT,
+    OVEN_LOAN,
     "How much can I borrow if I can pay ₹25,000 a month for 20 years at 9%?",
     "How many months will it take to repay a ₹5 lakh loan at 10% if I pay ₹12,000 a month?",
     "If I take a home loan of ₹30 lakh, what will my monthly payment be at 8.75% for 25 years?",
@@ -104,7 +106,7 @@ def test_savings_questions_are_not_loans():
 # ---------- invented zero rates are bounced
 def test_zero_rate_is_rejected_unless_the_question_says_so():
     from finbot.graph import invented_zero_rates
-    assert invented_zero_rates("loan_emi", {"principal": 91000, "annual_rate_pct": 0, "months": 60}, SAILBOAT) == ["annual_rate_pct"]
+    assert invented_zero_rates("loan_emi", {"principal": 36000, "annual_rate_pct": 0, "months": 48}, OVEN_LOAN) == ["annual_rate_pct"]
     assert invented_zero_rates("goal_saving", {"target": 1e7, "years": 10, "annual_return_pct": 0}, "Reach ₹1 crore in 10 years") \
         == ["annual_return_pct"]
     for ok in ("an interest-free loan of ₹1,20,000 for 12 months", "a 0% loan of ₹50,000", "at zero interest", "with no interest"):
@@ -117,18 +119,18 @@ def test_graph_bounces_invented_zero_rate_then_solves_rate():
     from helpers import ScriptedModel, make_kb, tool_call
     from finbot.graph import FinBot
     model = ScriptedModel(responses=[
-        tool_call("loan_emi", {"principal": 91000, "annual_rate_pct": 0, "months": 60}, "c1"),
-        tool_call("loan_emi", {"principal": 91000, "months": 60, "emi": 1750}, "c2"),
-        "The highest rate you can afford is an APR of about 5.78% (monthly rate × 12)."])
-    t = FinBot(model=model, kb=make_kb()).ask(SAILBOAT, thread_id="sail")
+        tool_call("loan_emi", {"principal": 36000, "annual_rate_pct": 0, "months": 48}, "c1"),
+        tool_call("loan_emi", {"principal": 36000, "months": 48, "emi": 870}, "c2"),
+        "The highest rate the bakery can afford is an APR of about 7.47% (monthly rate × 12)."])
+    t = FinBot(model=model, kb=make_kb()).ask(OVEN_LOAN, thread_id="oven")
     assert "error" in t["tools"][0]["output"] and "annual_rate_pct=0" in t["tools"][0]["output"]["error"]
-    assert round(t["tools"][1]["output"]["result"]["annual_rate_pct"], 2) == 5.78
+    assert round(t["tools"][1]["output"]["result"]["annual_rate_pct"], 2) == 7.47
     assert t["review"]["passed"], t["review"]
 
 
 # ---------- answers must not narrate tool calls
 @pytest.mark.parametrize("text", [
-    "The loan_emi function was called with the inputs principal 91000 and months 60.",
+    "The loan_emi function was called with the inputs principal 36000 and months 48.",
     "Using the calculate tool, the result is 5.",
     "I called tvm(solve_for='fv') and got ₹1,40,255.",
     "The tool was called with these values.",
@@ -168,7 +170,7 @@ def test_project_cash_flow_table_routes_to_npv_only():
          "profitability index of each project?")
     f = precheck(q).flags
     assert f["calc_types"] == ["npv_irr"] and not f["statement_data"]
-    assert precheck("What is the equivalent annual cost of a $3 bulb that costs $0.85 a year to run for 24 years at 10 percent?"
+    assert precheck("A $420 pump costs $165 a year to run for 8 years. At 7 percent, what is its equivalent annual cost?"
                     ).flags["calc_types"] == ["eac"]          # its own route since 2026-10-16 (SPEC 4.0)
     pasted = "Balance sheet\n| Item | Amount |\n| Cash | 1,20,000 |\n| Inventory | 2,50,000 |\n| Current liabilities | 1,80,000 |"
     assert "statement" in precheck(pasted + "\nCompute the current ratio").flags["calc_types"]
@@ -178,5 +180,5 @@ def test_empty_answer_after_revision_gets_a_fallback_not_just_the_footer():
     from helpers import ScriptedModel, make_kb
     from finbot.graph import FinBot
     model = ScriptedModel(responses=["", ""])
-    t = FinBot(model=model, kb=make_kb()).ask("What is the equivalent annual cost of a $3 bulb at 10 percent?", thread_id="empty")
+    t = FinBot(model=model, kb=make_kb()).ask("At 7 percent, what is the equivalent annual cost per year of a $420 pump?", thread_id="empty")
     assert t["review"]["footer"] and "could not complete" in t["answer_text"]

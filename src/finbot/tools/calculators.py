@@ -482,7 +482,7 @@ def equivalent_annual_cost(purchase_cost: float, annual_cost: float | None = Non
         life_years = abs(lifetime_hours) / abs(hours_per_year)
         working.append(f"Life = {group(abs(lifetime_hours))} ÷ {group(abs(hours_per_year))} = {life_years:g} years")
     _require(_given(life_years) and life_years > 0, "life_years is missing. Give it, or lifetime_hours and hours_per_year "
-                                                    "(e.g. 12,000 hours ÷ 500 hours a year = 24 years).")
+                                                    "(e.g. 16,000 hours ÷ 2,000 hours a year = 8 years).")
     _require(abs(life_years - round(life_years)) < 1e-9, f"life_years must be a whole number of years (got {life_years:g}).")
     purchase, yearly, n, r = abs(float(purchase_cost)), abs(float(annual_cost)), int(round(life_years)), rate_pct / 100
     salvage = float(salvage or 0.0)

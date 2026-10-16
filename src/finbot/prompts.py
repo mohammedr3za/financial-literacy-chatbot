@@ -23,7 +23,7 @@ _FLAG_NOTES = {
     "personal_advice_request": "The user is asking what to buy, sell or invest in. Give information, not a pick, and suggest a SEBI-registered investment adviser.",
     "high_risk_topic": "This is a high-risk topic. State the specific risks clearly.",
     "calculation_intent": "This needs a calculation. Call the right calculator tool.",
-    "currency": "Amounts in this question are in US dollars: write them with $ and Western digit grouping (1,228,200). Never use ₹, lakh or crore.",
+    "currency": "Amounts in this question are in US dollars: write them with $ and Western digit grouping (1,875,400). Never use ₹, lakh or crore.",
     "followup": "This is a follow-up to the previous question: reuse its numbers unless the user changes them, and call the tool again; never describe a tool call in words.",
     "statement_data": ("The user gave financial statement data. To find an item from given items or ratios use solve_financials; for a full "
                        "analysis use financial_ratios, balance_sheet_check or cash_flow_statement; keep the user's units."),

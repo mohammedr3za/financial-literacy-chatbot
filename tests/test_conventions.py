@@ -7,9 +7,8 @@ from finbot.precheck import precheck
 from finbot.tools.calculators import sip_future_value
 from finbot.tools.income_tax import income_tax
 
-RETIRE = ("You plan to save for retirement over the next 30 years. You will invest $500 per month in a stock account and "
-          "$200 per month in a bond account. The stock account returns 8 percent and the bond account 4 percent. How much "
-          "will you have when you retire?")
+RETIRE = ("For the next 30 years you invest $500 per month through a stock account and $200 per month through a bond account, "
+          "earning 8 percent and 4 percent a year respectively. How much will you have when you retire?")
 
 
 def fv_ordinary(p, annual_pct, years):

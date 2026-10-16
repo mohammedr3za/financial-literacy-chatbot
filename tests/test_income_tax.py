@@ -80,7 +80,7 @@ def test_tax_question_routes_to_income_tax_and_statement_tax_rate_does_not():
     from finbot.routing import detect
     q = "if my salary is 30 lakhs (= 3000000) per annum, and i have 50000 hra per month, how much should i pay in taxes"
     assert "income_tax" in detect(q, True, False)
-    assert "income_tax" not in detect("Sales are $19,073 and the tax rate is 23 percent. What is net income?", True, True)
+    assert "income_tax" not in detect("Sales are $18,400 and the tax rate is 30 percent. What is net income?", True, True)
 
 
 def test_registry_tool_runs_and_grounding_rejects_invented_age():

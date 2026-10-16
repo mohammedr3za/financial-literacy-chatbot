@@ -57,7 +57,7 @@ def tvm(solve_for: str, annual_rate_pct: float | None = None, years: float | Non
     All amounts are positive plain rupees. Leave out the value you want to solve for.
     Examples: CAGR from 100 to 200 in 5 years -> solve_for="annual_rate_pct", years=5, pv=100, fv=200.
     Monthly saving to reach 1 crore in 15 years at 12% -> solve_for="pmt", annual_rate_pct=12, years=15, fv=10000000, periods_per_year=12.
-    Annuity: PV of 12600 a year for 6 years at 7.5% -> solve_for="pv", pmt=12600, years=6, annual_rate_pct=7.5 (no fv); the result's annuity_values has PV and FV, ordinary and due.
+    Annuity: PV of 9000 a year for 5 years at 6% -> solve_for="pv", pmt=9000, years=5, annual_rate_pct=6 (no fv); the result's annuity_values has PV and FV, ordinary and due.
     Withdrawal: monthly amount that uses up 2500000 over 30 years at 6% -> solve_for="pmt", pv=2500000, years=30, annual_rate_pct=6, periods_per_year=12 (no fv).
 
     Args:
@@ -90,18 +90,18 @@ def equivalent_annual_cost(purchase_cost: float, rate_pct: float, annual_cost: f
                            life_years: float | None = None, salvage: float = 0.0, power_watts: float | None = None,
                            hours_per_year: float | None = None, price_per_kwh: float | None = None,
                            lifetime_hours: float | None = None) -> str:
-    """Equivalent annual cost (EAC, equivalent annual annuity) of something bought now and run at a level yearly cost, e.g. a machine or a light bulb. Call it once per option. Pass costs as positive numbers; the tool returns the yearly cost, the life, the PV of costs, the annuity factor and the EAC (negative: a cost), with a year-by-year table. For electricity, pass power_watts, hours_per_year, price_per_kwh and lifetime_hours exactly as the question gives them instead of annual_cost and life_years; the tool works them out. Never write out the yearly cash flows yourself.
+    """Equivalent annual cost (EAC, equivalent annual annuity) of something bought now and run at a level yearly cost, e.g. a machine or an electric pump. Call it once per option. Pass costs as positive numbers; the tool returns the yearly cost, the life, the PV of costs, the annuity factor and the EAC (negative: a cost), with a year-by-year table. For electricity, pass power_watts, hours_per_year, price_per_kwh and lifetime_hours exactly as the question gives them instead of annual_cost and life_years; the tool works them out. Never write out the yearly cash flows yourself.
 
     Args:
-        purchase_cost: Price paid today, e.g. 3.00.
+        purchase_cost: Price paid today, e.g. 420.00.
         rate_pct: Required return or discount rate in percent, e.g. 10.
         annual_cost: Running cost per year, if the question states it. Leave out when you give the electricity figures.
         life_years: Life in whole years, if the question states it. Leave out when you give lifetime_hours.
         salvage: Resale value at the end of the life, only if the question gives one. Default 0.
-        power_watts: Electricity: the power in watts, e.g. 60 for a 60-watt bulb.
-        hours_per_year: Hours used per year, e.g. 500.
-        price_per_kwh: Price of one kilowatt-hour, e.g. 0.113.
-        lifetime_hours: Total life in hours, e.g. 12000; the life in years is lifetime_hours ÷ hours_per_year.
+        power_watts: Electricity: the power in watts, e.g. 750 for a 750-watt pump.
+        hours_per_year: Hours used per year, e.g. 2000.
+        price_per_kwh: Price of one kilowatt-hour, e.g. 0.15.
+        lifetime_hours: Total life in hours, e.g. 16000; the life in years is lifetime_hours ÷ hours_per_year.
     """
     return _run(C.equivalent_annual_cost, purchase_cost=purchase_cost, annual_cost=annual_cost, life_years=life_years,
                 rate_pct=rate_pct, salvage=salvage, power_watts=power_watts, hours_per_year=hours_per_year,
@@ -114,9 +114,9 @@ def perpetuity(cash_flow: float, rate_pct: float, growth_pct: float = 0.0, inves
     """Present value of a perpetuity (cash flows forever), level or growing; with an investment also its NPV, IRR and the break-even growth rate.
 
     Args:
-        cash_flow: The first yearly cash flow, received at the end of starts_in_year, e.g. 100000.
-        rate_pct: Required return or discount rate in percent, e.g. 11.
-        growth_pct: Constant yearly growth of the cash flow in percent, e.g. 4. Default 0 (a level perpetuity).
+        cash_flow: The first yearly cash flow, received at the end of starts_in_year, e.g. 60000.
+        rate_pct: Required return or discount rate in percent, e.g. 9.
+        growth_pct: Constant yearly growth of the cash flow in percent, e.g. 3. Default 0 (a level perpetuity).
         investment: Initial investment today, if the question gives one; gives NPV, IRR and the break-even growth rate.
         starts_in_year: Year of the first cash flow. Default 1 (end of the first year).
     """
@@ -129,19 +129,19 @@ _PER_YEAR = float | list[float] | None
 
 class ProjectArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    years: int = Field(description="Project life in years, e.g. 3.")
-    tax_rate_pct: float = Field(description="Tax rate in percent, e.g. 22.")
-    rate_pct: float | None = Field(None, description="Required return or discount rate in percent, for NPV, e.g. 10.")
+    years: int = Field(description="Project life in years, e.g. 5.")
+    tax_rate_pct: float = Field(description="Tax rate in percent, e.g. 30.")
+    rate_pct: float | None = Field(None, description="Required return or discount rate in percent, for NPV, e.g. 12.")
     sales: _PER_YEAR = Field(None, description="Yearly sales: one number, or a list with one value per year.")
     units: _PER_YEAR = Field(None, description="Units sold per year: one number or a list per year (use with price_per_unit).")
     price_per_unit: float | None = Field(None, description="Selling price per unit. Leave out when solving for the bid price.")
     costs: _PER_YEAR = Field(None, description="Yearly cash operating costs (pretax), not depreciation.")
     fixed_costs: _PER_YEAR = Field(None, description="Fixed costs per year.")
     variable_cost_per_unit: _PER_YEAR = Field(None, description="Variable cost per unit in dollars (or rupees), e.g. 12.5.")
-    variable_cost_cents_per_unit: _PER_YEAR = Field(None, description="Variable cost per unit when the question gives it in cents, as written (.50 cents -> 0.5); the tool divides by 100.")
-    variable_cost_pct: float | None = Field(None, description="Variable costs as a percent of sales, e.g. 25.")
+    variable_cost_cents_per_unit: _PER_YEAR = Field(None, description="Variable cost per unit when the question gives it in cents, as written (.40 cents -> 0.4); the tool divides by 100.")
+    variable_cost_pct: float | None = Field(None, description="Variable costs as a percent of sales, e.g. 40.")
     ocf: _PER_YEAR = Field(None, description="Operating cash flow per year, only if the question gives it directly.")
-    investment: float = Field(0.0, description="Fixed-asset cost at year 0, e.g. 2300000.")
+    investment: float = Field(0.0, description="Fixed-asset cost at year 0, e.g. 1800000.")
     depreciation: Literal["straight_line", "macrs", "none"] = Field("straight_line", description="Depreciation method.")
     depreciation_years: int | None = Field(None, description="Straight-line tax life if it differs from years.")
     macrs_rates_pct: list[float] | None = Field(None, description="MACRS rates in percent from the question, e.g. [33.33, 44.45, 14.81, 7.41].")
@@ -372,7 +372,7 @@ SolveFinancialsArgs = create_model(
 
 @tool(args_schema=SolveFinancialsArgs)
 def solve_financials(targets: list[str], **items) -> str:
-    """Solve textbook corporate-finance problems from statement figures and ratios: income statement (EBIT, taxes, net income), liquidity, turnover and days' sales, leverage and DuPont, profit margin, ROA, ROE, payout, retention, sustainable or internal growth, EPS, P/E, market-to-book and EV multiples. Pass EVERY figure the question gives under its name, and the item(s) asked for in targets; the tool applies the standard formulas and returns each step. Never compute an input yourself; for statements covering several years, call it once per year. Percent items (*_pct) take the percent number (23 percent -> 23); ratios and turnovers are plain numbers (.84 -> 0.84). Example: "current liabilities $445,000, quick ratio .84, inventory turnover 6, current ratio 1.3; what is COGS?" -> current_liabilities=445000, quick_ratio=0.84, inventory_turnover=6, current_ratio=1.3, targets=["cogs"]."""
+    """Solve textbook corporate-finance problems from statement figures and ratios: income statement (EBIT, taxes, net income), liquidity, turnover and days' sales, leverage and DuPont, profit margin, ROA, ROE, payout, retention, sustainable or internal growth, EPS, P/E, market-to-book and EV multiples. Pass EVERY figure the question gives under its name, and the item(s) asked for in targets; the tool applies the standard formulas and returns each step. Never compute an input yourself; for statements covering several years, call it once per year. Percent items (*_pct) take the percent number (23 percent -> 23); ratios and turnovers are plain numbers (.75 -> 0.75). Example: "current liabilities $250,000, quick ratio .75, inventory turnover 4, current ratio 1.5; what is COGS?" -> current_liabilities=250000, quick_ratio=0.75, inventory_turnover=4, current_ratio=1.5, targets=["cogs"]."""
     return _run(F.solve_financials, targets=targets, **{k: v for k, v in items.items() if v is not None})
 
 

@@ -237,7 +237,7 @@ def _tokenize(text: str) -> list[_Tok]:
             i, space = j, False
             continue
         nxt = text[i + 1] if i + 1 < n else " "
-        if ch == "-":   # a minus only when spaced (" - ") or a sign ("-3.60"); otherwise a range, date or hyphenated word
+        if ch == "-":   # a minus only when spaced (" - ") or a sign ("-4.25"); otherwise a range, date or hyphenated word
             sign = (nxt.isdigit() or nxt in "$₹.(") and not prev.isalnum() and (
                 not toks or space or toks[-1].kind in ("LP", "EQ", "OP", "SEP"))
             kind = "OP" if (space and nxt.isspace()) or sign else "SEP"
@@ -254,7 +254,7 @@ def _expr(run: list[_Tok], pct_as_fraction: bool, bump: int = -1) -> str:
     parts, last = [], None
     for k, t in enumerate(run):
         if t.kind in ("NUM", "LP") and last in ("NUM", "RP"):
-            parts.append("*")                                          # implicit product: (1 + 1.80)(6,269)
+            parts.append("*")                                          # implicit product: (1 + 0.5)(2,000)
         if t.kind == "NUM":
             v = t.value + (0.5 * 10 ** -t.decimals if k == bump else 0)
             parts.append(f"({v!r}/100)" if t.pct and pct_as_fraction else repr(v))
@@ -268,7 +268,7 @@ def _display(run: list[_Tok]) -> str:
     out = []
     for k, t in enumerate(run):
         if t.kind == "LP" and k + 2 < len(run) and run[k + 1].kind == "NUM" and run[k + 2].kind == "RP":
-            continue                                                    # (2885) -> 2885
+            continue                                                    # (2000) -> 2000
         if t.kind == "RP" and k >= 2 and run[k - 1].kind == "NUM" and run[k - 2].kind == "LP":
             continue
         text = {"*": "×", "·": "×", "/": "÷", "∕": "÷", "-": "−"}.get(t.text, t.text) if t.kind == "OP" else t.text
@@ -290,7 +290,7 @@ def _balanced(s: str) -> bool:
 
 def _runs(toks: list[_Tok]):
     """Candidate expressions: lists of token indices (numbers, operators, brackets) inside one clause. A clause ends at
-    "=", "≈" or punctuation; a clause where an operator touches a word ("3.39 × PVIFA") is symbolic and skipped whole."""
+    "=", "≈" or punctuation; a clause where an operator touches a word ("250 × PVIFA") is symbolic and skipped whole."""
     start = 0
     for end in range(len(toks) + 1):
         if end < len(toks) and toks[end].kind not in ("SEP", "EQ"):
@@ -306,7 +306,7 @@ def _runs(toks: list[_Tok]):
                 t.unary = t.text in "−-+" and (prv is None or prv.kind in ("LP", "OP", "WORD")) and nxt is not None \
                     and nxt.kind in ("NUM", "LP")
                 if (nxt is not None and nxt.kind == "WORD") or (not t.unary and prv is not None and prv.kind == "WORD"):
-                    symbolic = True                                     # "3.39 × PVIFA", "hours × 0.06"
+                    symbolic = True                                     # "250 × PVIFA", "hours × 0.75"
             elif t.kind == "LP" and prv is not None and prv.kind == "WORD" and not t.space:
                 symbolic = True                                         # PVIFA(10%, 2)
         if symbolic:
@@ -392,7 +392,7 @@ def arithmetic_mismatches(answer: str) -> list[dict]:
         before = toks[span[0] - 1] if span[0] else None
         after = toks[span[-1] + 1] if span[-1] + 1 < len(toks) else None
         if after is not None and after.kind in ("WORD", "NUM"):
-            continue                                                    # "$0.37 + $3.39 a year": a unit follows
+            continue                                                    # "$180 + $225 a year": a unit follows
         if before is not None and before.kind == "WORD" and span[0] >= 2 and toks[span[0] - 2].kind == "NUM":
             continue                                                    # "15% of 2,000 × 1.18": joined by a word
         if (all(t.text == "/" for t in ops) and all(not t.decimals and not t.pct for t in nums)

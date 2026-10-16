@@ -151,7 +151,7 @@ def test_prompt_says_ask_for_missing_inputs():
 
 # ---------- tool names that are also English words ("perpetuity (…)", "calculate (…)") are prose, not calls
 def test_word_tool_names_followed_by_a_bracket_in_prose_are_not_narration():
-    text = "A growing perpetuity (cash flows that never end) is worth $1,428,571.43 here."
+    text = "A growing perpetuity (cash flows that never end) is worth $1,000,000.00 here."
     assert strip_tool_narration(text) == text
     assert "tool_narration" not in review_answer(text, {"calculation_intent": True}, ["perpetuity"], 0).codes
     assert "tool_narration" in review_answer("I ran perpetuity(cash_flow=1) to get it.", {"calculation_intent": True},

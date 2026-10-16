@@ -7,7 +7,7 @@ of Corporate Finance" conventions), never from the model. Identities are built f
 parsing, eval or exec.
 
 Units: amounts as plain numbers; percent items (*_pct) as the percent number (23 percent -> 23); ratios, turnovers
-and multiples as plain numbers (.84 -> 0.84); days as days.
+and multiples as plain numbers (.75 -> 0.75); days as days.
 """
 import difflib
 import re
@@ -51,8 +51,8 @@ VARIABLES: dict[str, tuple[str, str, str]] = {
     "total_debt": ("money", "Total debt", "Total debt = total liabilities (current liabilities + long-term debt)."),
     "total_equity": ("money", "Total equity", "Total (owners' or shareholders') equity."),
     # short-term solvency, asset use
-    "current_ratio": ("ratio", "Current ratio", "Current ratio, e.g. 1.3."),
-    "quick_ratio": ("ratio", "Quick ratio", "Quick (acid-test) ratio: .84 -> 0.84."),
+    "current_ratio": ("ratio", "Current ratio", "Current ratio, e.g. 1.5."),
+    "quick_ratio": ("ratio", "Quick ratio", "Quick (acid-test) ratio: .75 -> 0.75."),
     "cash_ratio": ("ratio", "Cash ratio", "Cash ratio."),
     "inventory_turnover": ("ratio", "Inventory turnover", "Inventory turnover (times)."),
     "days_sales_in_inventory": ("days", "Days' sales in inventory", "Days' sales in inventory (days)."),
@@ -384,7 +384,7 @@ def solve_financials(targets: list[str], **given) -> dict:
     zeros = sorted(k for k, v in given.items() if v == 0)            # a zero almost always means "not given"
     inputs = {k: v for k, v in given.items() if v != 0}
     if not inputs:
-        raise ValueError("Pass the figures the question gives, by name, e.g. sales=675000, tax_rate_pct=23.")
+        raise ValueError("Pass the figures the question gives, by name, e.g. sales=500000, tax_rate_pct=23.")
 
     known = {k: _rational(v) for k, v in inputs.items()}
     active = _active(credit=bool(_CREDIT_NAMES & (set(inputs) | set(targets))))

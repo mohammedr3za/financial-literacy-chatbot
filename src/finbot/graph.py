@@ -26,7 +26,7 @@ _WORD_NUMBERS = {w: i for i, w in enumerate("zero one two three four five six se
                                             "fourteen fifteen sixteen seventeen eighteen nineteen twenty".split())}
 _WORD_NUMBERS.update({"thirty": 30, "forty": 40, "fifty": 50})
 _WORD_NUMBER = re.compile(r"(?i)\b(" + "|".join(_WORD_NUMBERS) + r")\b")
-_NUMBER = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|(?<![\w.,])\d+(?:\.\d+)?|(?<![\w.])\.\d+")   # ".84" too
+_NUMBER = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|(?<![\w.,])\d+(?:\.\d+)?|(?<![\w.])\.\d+")   # ".75" too
 _SCALED = re.compile(r"(?i)(?<![\w.])(\d+(?:\.\d+)?|\.\d+)\s*(thousand|million|mn|billion|bn)\b")
 _SCALE = {"thousand": 1e3, "million": 1e6, "mn": 1e6, "billion": 1e9, "bn": 1e9}
 _PERCENT = re.compile(r"(?i)(?<![\w.,])(\d+(?:\.\d+)?|\.\d+)\s*(%|per ?cent)")
@@ -42,7 +42,7 @@ def numbers_in(text: str) -> set[float]:
 def _arg_numbers(args, path=""):
     if isinstance(args, bool):
         return
-    if isinstance(args, str) and _NUMERIC_STRING.fullmatch(args):   # "445000" sent as text is checked like a number
+    if isinstance(args, str) and _NUMERIC_STRING.fullmatch(args):   # "250000" sent as text is checked like a number
         yield path, float(args.replace(",", ""))
     elif isinstance(args, (int, float)):
         yield path, float(args)
@@ -65,7 +65,7 @@ def _solver_unit_problem(name: str, a: float, allowed: set, percents: set, perce
     if kind in ("ratio", "days"):
         if (a in allowed and a not in percent_only) or round(a * 100, 4) in percents:
             return None
-        return " (ratios are plain numbers: .84 -> 0.84, a 40 percent ratio -> 0.4)"
+        return " (ratios are plain numbers: .75 -> 0.75, a 40 percent ratio -> 0.4)"
     return None if a in allowed else ""
 
 
@@ -76,7 +76,7 @@ def ungrounded_values(args: dict, user_text: str, tool: str | None = None, tool_
     if tool == "equivalent_annual_cost":
         allowed = allowed | numbers_in(tool_text)
         return [f"{p}={v:g}" for p, v in _arg_numbers(args) if v != 0 and round(abs(v), 4) not in allowed]
-    if tool == "project_cash_flows":   # number words ("three-year") count; so does a unit change by 100 (".50 cents" = 0.005)
+    if tool == "project_cash_flows":   # number words ("three-year") count; so does a unit change by 100 (".40 cents" = 0.004)
         allowed = allowed | numbers_in(tool_text) | {float(_WORD_NUMBERS[w.lower()]) for w in _WORD_NUMBER.findall(user_text or "")}
         allowed = allowed | {round(a / 100, 6) for a in allowed} | {round(a * 100, 4) for a in allowed}
         return [f"{p}={v:g}" for p, v in _arg_numbers(args) if v != 0 and round(abs(v), 6) not in allowed
@@ -202,7 +202,7 @@ def _argument_error(name: str, exc: Exception) -> str:
 
 
 _SOLVER_ADVICE = (" For solve_financials, pass each figure exactly as the question states it under its name; percent items (*_pct) "
-                  "take the percent number (23 percent -> 23) and ratios are plain numbers (.84 -> 0.84). Never compute an input "
+                  "take the percent number (23 percent -> 23) and ratios are plain numbers (.75 -> 0.75). Never compute an input "
                   "yourself: put the item you need in targets.")
 _BALANCE_ADVICE = (" For a balance sheet, pass every listed item to balance_sheet_check (it adds up the sections); if the "
                    "question asks for total equity (or total liabilities), pass that section as {}: the tool derives it as "

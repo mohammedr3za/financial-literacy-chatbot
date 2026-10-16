@@ -86,15 +86,16 @@ def test_zero_items_are_treated_as_not_given():
 
 
 def test_missing_equity_is_derived_as_the_balancing_figure():
-    # current assets 5,760 + net fixed assets 25,500; current liabilities 5,200 + long-term debt 12,500 -> equity 13,560
-    out = balance_sheet_check(assets={"Current assets": 5_760, "Net fixed assets": 25_500},
-                              liabilities={"Current liabilities": 5_200, "Long-term debt": 12_500},
+    # current assets 7,350 + net fixed assets 31,800 = 39,150; current liabilities 6,150 + long-term debt 14,900 = 21,050
+    # -> equity = 39,150 − 21,050 = 18,100
+    out = balance_sheet_check(assets={"Current assets": 7_350, "Net fixed assets": 31_800},
+                              liabilities={"Current liabilities": 6_150, "Long-term debt": 14_900},
                               equity={"Shareholders' equity": 0})
     r = out["result"]
-    assert r["total_equity"] == 13_560 and r["derived"] == {"total_equity": 13_560}
+    assert r["total_equity"] == 18_100 and r["derived"] == {"total_equity": 18_100}
     assert r["balanced"] and r["difference"] == 0
     rows = out["table"]["rows"]
-    assert any(row[1] == "Shareholders' equity (derived)" and row[2] == "13,560" for row in rows)
+    assert any(row[1] == "Shareholders' equity (derived)" and row[2] == "18,100" for row in rows)
     assert "Not balanced" not in out["table"]["note"] and "derived" in out["table"]["note"]
 
 

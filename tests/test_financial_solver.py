@@ -8,14 +8,19 @@ from pydantic import ValidationError
 from finbot.tools.financial_solver import solve_financials
 from finbot.tools.fmt import MONEY_STYLE
 
-TRALEE = ("Tralee Corporation has current liabilities of $445,000, a quick ratio of .84, inventory turnover of 6, "
-          "and a current ratio of 1.3. What is the cost of goods sold?")
-TRALEE_ARGS = {"current_liabilities": 445000, "quick_ratio": 0.84, "inventory_turnover": 6, "current_ratio": 1.3,
-               "targets": ["cogs"]}
-NAKATOMI = ("Nakatomi, Inc., has sales of $675,000, costs of $337,000, depreciation expense of $81,000, interest expense "
-            "of $50,500, and a tax rate of 23 percent. What is the net income for this firm?")
-NAKATOMI_ARGS = {"sales": 675000, "costs": 337000, "depreciation": 81000, "interest": 50500, "tax_rate_pct": 23,
-                 "targets": ["net_income"]}
+# Our own scenarios (not course-set problems). Worked by hand:
+# LIQUIDITY: current assets = 1.6 × 320,000 = 512,000; quick assets = 0.75 × 320,000 = 240,000;
+#            inventory = 512,000 − 240,000 = 272,000; COGS = 5 × 272,000 = 1,360,000.
+# INCOME:    EBIT = 548,000 − 262,500 − 71,000 = 214,500; EBT = 214,500 − 38,500 = 176,000;
+#            taxes = 176,000 × 0.30 = 52,800; net income = 176,000 − 52,800 = 123,200.
+LIQUIDITY_Q = ("Corvid Trading has current liabilities of $320,000, a quick ratio of .75, inventory turnover of 5, "
+               "and a current ratio of 1.6. What is its cost of goods sold?")
+LIQUIDITY_ARGS = {"current_liabilities": 320000, "quick_ratio": 0.75, "inventory_turnover": 5, "current_ratio": 1.6,
+                  "targets": ["cogs"]}
+INCOME_Q = ("Halvorsen Ltd. has sales of $548,000, costs of $262,500, depreciation expense of $71,000, interest expense "
+            "of $38,500, and a tax rate of 30 percent. What is its net income?")
+INCOME_ARGS = {"sales": 548000, "costs": 262500, "depreciation": 71000, "interest": 38500, "tax_rate_pct": 30,
+               "targets": ["net_income"]}
 
 
 def step(out, var):
@@ -29,28 +34,28 @@ def usd():
     MONEY_STYLE.reset(tok)
 
 
-def test_tralee_cogs_goes_through_quick_assets_and_inventory(usd):
-    out = solve_financials(**TRALEE_ARGS)
-    assert out["result"]["cogs"] == pytest.approx(1_228_200)
-    assert step(out, "current_assets")["value"] == pytest.approx(578_500)      # 1.3 × 445,000
-    assert step(out, "quick_assets")["value"] == pytest.approx(373_800)        # 0.84 × 445,000
+def test_cogs_from_liquidity_ratios_goes_through_quick_assets_and_inventory(usd):
+    out = solve_financials(**LIQUIDITY_ARGS)
+    assert out["result"]["cogs"] == pytest.approx(1_360_000)                    # 5 × 272,000
+    assert step(out, "current_assets")["value"] == pytest.approx(512_000)      # 1.6 × 320,000
+    assert step(out, "quick_assets")["value"] == pytest.approx(240_000)        # 0.75 × 320,000
     inv = step(out, "inventory")
-    assert inv["value"] == pytest.approx(204_700)
+    assert inv["value"] == pytest.approx(272_000)                              # 512,000 − 240,000
     assert inv["formula"] == "inventory = current_assets − quick_assets"
-    assert inv["substituted"] == "inventory = 578,500 − 373,800"
+    assert inv["substituted"] == "inventory = 512,000 − 240,000"
     assert [s["variable"] for s in out["steps"]] == ["current_assets", "quick_assets", "inventory", "cogs"]
     assert step(out, "current_assets")["formula"] == "current_assets = current_ratio × current_liabilities"
-    assert step(out, "cogs")["substituted"] == "cogs = 6 × 204,700"
+    assert step(out, "cogs")["substituted"] == "cogs = 5 × 272,000"
     assert "warnings" not in out and "missing" not in out
 
 
-def test_nakatomi_income_statement(usd):
-    out = solve_financials(**NAKATOMI_ARGS)
+def test_income_statement_net_income_steps(usd):
+    out = solve_financials(**INCOME_ARGS)
     vals = {s["variable"]: s["value"] for s in out["steps"]}
-    assert vals == pytest.approx({"ebit": 257_000, "ebt": 206_500, "taxes": 47_495, "net_income": 159_005})
+    assert vals == pytest.approx({"ebit": 214_500, "ebt": 176_000, "taxes": 52_800, "net_income": 123_200})
     assert step(out, "ebit")["formula"] == "ebit = sales − costs − depreciation"
-    assert step(out, "taxes")["substituted"] == "taxes = 206,500 × 23 ÷ 100"
-    assert out["result"] == {"net_income": 159005.0}
+    assert step(out, "taxes")["substituted"] == "taxes = 176,000 × 30 ÷ 100"
+    assert out["result"] == {"net_income": 123200.0}
 
 
 def test_dupont_roe_from_ratios_only():
@@ -91,7 +96,7 @@ def test_inconsistent_inputs_give_a_warning():
 
 
 def test_consistent_redundant_inputs_do_not_warn():
-    out = solve_financials(current_assets=578500, current_liabilities=445000, current_ratio=1.3, targets=["net_working_capital"])
+    out = solve_financials(current_assets=512000, current_liabilities=320000, current_ratio=1.6, targets=["net_working_capital"])
     assert "warnings" not in out
 
 
@@ -109,9 +114,9 @@ def test_underdetermined_target_reports_what_is_missing():
 
 
 def test_zero_inputs_are_treated_as_not_given():
-    out = solve_financials(sales=675000, costs=337000, depreciation=81000, interest=50500, tax_rate_pct=23, dividends=0,
+    out = solve_financials(sales=548000, costs=262500, depreciation=71000, interest=38500, tax_rate_pct=30, dividends=0,
                            targets=["net_income"])
-    assert out["result"]["net_income"] == pytest.approx(159_005)
+    assert out["result"]["net_income"] == pytest.approx(123_200)
     assert out["ignored_zero_inputs"] == ["dividends"]
 
 
@@ -119,10 +124,10 @@ def test_unknown_names_are_rejected_with_suggestions():
     from finbot.tools.registry import TOOLS_BY_NAME
     tool = TOOLS_BY_NAME["solve_financials"]
     with pytest.raises(ValidationError) as e:
-        tool.invoke({"sales": 675000, "taxrate": 23, "targets": ["net_income"]})     # tax_rate itself is an accepted alias
+        tool.invoke({"sales": 548000, "taxrate": 30, "targets": ["net_income"]})     # tax_rate itself is an accepted alias
     assert "tax_rate_pct" in str(e.value) and "Valid names" in str(e.value)
     with pytest.raises(ValidationError) as e:
-        tool.invoke({"sales": 675000, "targets": ["gross_cost"]})
+        tool.invoke({"sales": 548000, "targets": ["gross_cost"]})
     assert "cogs" in str(e.value)
     with pytest.raises(ValueError):
         solve_financials(sales=1, targets=["nonsense"])
@@ -130,8 +135,8 @@ def test_unknown_names_are_rejected_with_suggestions():
 
 def test_tool_json_has_every_step_value_and_a_table():
     from finbot.tools.registry import TOOLS_BY_NAME
-    out = json.loads(TOOLS_BY_NAME["solve_financials"].invoke(TRALEE_ARGS))
-    assert out["result"]["cogs"] == pytest.approx(1_228_200) and "table_shown_to_user" in out
+    out = json.loads(TOOLS_BY_NAME["solve_financials"].invoke(LIQUIDITY_ARGS))
+    assert out["result"]["cogs"] == pytest.approx(1_360_000) and "table_shown_to_user" in out
     text = json.dumps(out)
     for s in out["steps"]:
         assert str(s["value"]) in text
@@ -143,42 +148,42 @@ def test_tool_json_has_every_step_value_and_a_table():
 def test_money_is_formatted_in_the_question_currency():
     tok = MONEY_STYLE.set("USD")
     try:
-        out = solve_financials(**TRALEE_ARGS)
-        assert out["formatted"]["cogs"] == "$1,228,200.00"
-        assert step(out, "inventory")["formatted"] == "$204,700.00"
+        out = solve_financials(**LIQUIDITY_ARGS)
+        assert out["formatted"]["cogs"] == "$1,360,000.00"
+        assert step(out, "inventory")["formatted"] == "$272,000.00"
         assert out["table"]["title"].endswith("($)")
     finally:
         MONEY_STYLE.reset(tok)
-    assert solve_financials(**TRALEE_ARGS)["formatted"]["cogs"] == "₹12,28,200.00"
+    assert solve_financials(**LIQUIDITY_ARGS)["formatted"]["cogs"] == "₹13,60,000.00"
 
 
 # ---------- grounding: figures passed must be the question's figures, in the right units
 def test_grounding_accepts_question_figures_as_written():
     from finbot.graph import ungrounded_values
-    assert ungrounded_values({k: v for k, v in TRALEE_ARGS.items()}, TRALEE, "solve_financials") == []
-    assert ungrounded_values(NAKATOMI_ARGS, NAKATOMI, "solve_financials") == []
+    assert ungrounded_values({k: v for k, v in LIQUIDITY_ARGS.items()}, LIQUIDITY_Q, "solve_financials") == []
+    assert ungrounded_values(INCOME_ARGS, INCOME_Q, "solve_financials") == []
 
 
 def test_grounding_checks_percent_and_ratio_units():
     from finbot.graph import ungrounded_values
-    bad = ungrounded_values({"sales": 675000, "tax_rate_pct": 0.23}, NAKATOMI, "solve_financials")
-    assert len(bad) == 1 and bad[0].startswith("tax_rate_pct=0.23")
+    bad = ungrounded_values({"sales": 548000, "tax_rate_pct": 0.3}, INCOME_Q, "solve_financials")
+    assert len(bad) == 1 and bad[0].startswith("tax_rate_pct=0.3")
     assert ungrounded_values({"tax_rate_pct": 23}, "The tax rate is .23 and sales are $500.", "solve_financials") == []
     assert ungrounded_values({"tax_rate_pct": 0.23}, "The tax rate is .23 and sales are $500.", "solve_financials") != []
     assert ungrounded_values({"debt_ratio": 0.4}, "Its total debt ratio is 40 percent.", "solve_financials") == []
     assert ungrounded_values({"debt_ratio": 40}, "Its total debt ratio is 40 percent.", "solve_financials") != []
     assert ungrounded_values({"total_assets": 4_500_000}, "Total assets are $4.5 million.", "solve_financials") == []
-    assert ungrounded_values({"inventory": 204700}, TRALEE, "solve_financials") == ["inventory=204700"]
+    assert ungrounded_values({"inventory": 272000}, LIQUIDITY_Q, "solve_financials") == ["inventory=272000"]
 
 
 def test_numeric_strings_are_grounded_too():
     from finbot.graph import ungrounded_values
-    assert ungrounded_values({"sales": "999999"}, NAKATOMI, "solve_financials") == ["sales=999999"]
+    assert ungrounded_values({"sales": "999999"}, INCOME_Q, "solve_financials") == ["sales=999999"]
 
 
 # ---------- routing and graph
 @pytest.mark.parametrize("q", [
-    TRALEE, NAKATOMI,
+    LIQUIDITY_Q, INCOME_Q,
     "A firm has net income of $50,000 and 10,000 shares outstanding. What is its earnings per share?",
     "If a firm has an ROE of 15 percent and a payout ratio of 40 percent, what is its sustainable growth rate?",
     "Sales are $500,000, costs are $300,000 and the tax rate is 21 percent. What is net income?",
@@ -195,13 +200,13 @@ def test_graph_solver_call_passes_review_with_table():
     from helpers import ScriptedModel, make_kb, tool_call
     from finbot.graph import FinBot
     model = ScriptedModel(responses=[
-        tool_call("solve_financials", TRALEE_ARGS, "c1"),
-        "Current assets are $578,500 and quick assets are $373,800, so inventory is $204,700. "
-        "With inventory turnover of 6, the cost of goods sold is $1,228,200."])
-    t = FinBot(model=model, kb=make_kb()).ask(TRALEE, thread_id="solver")
-    assert t["tools"][0]["output"]["result"]["cogs"] == pytest.approx(1_228_200)
+        tool_call("solve_financials", LIQUIDITY_ARGS, "c1"),
+        "Current assets are $512,000 and quick assets are $240,000, so inventory is $272,000. "
+        "With inventory turnover of 5, the cost of goods sold is $1,360,000."])
+    t = FinBot(model=model, kb=make_kb()).ask(LIQUIDITY_Q, thread_id="solver")
+    assert t["tools"][0]["output"]["result"]["cogs"] == pytest.approx(1_360_000)
     assert t["review"]["passed"], t["review"]
-    assert t["revisions"] == 0 and len(t["tables"]) == 1 and "$1,228,200" in t["answer"]
+    assert t["revisions"] == 0 and len(t["tables"]) == 1 and "$1,360,000" in t["answer"]
     assert "solve_financials FIRST" in str(model.calls[0][-1].content)
 
 
@@ -209,46 +214,48 @@ def test_graph_rejects_invented_solver_input_then_accepts_retry():
     from helpers import ScriptedModel, make_kb, tool_call
     from finbot.graph import FinBot
     model = ScriptedModel(responses=[
-        tool_call("solve_financials", {**NAKATOMI_ARGS, "tax_rate_pct": 0.23}, "c1"),
-        tool_call("solve_financials", NAKATOMI_ARGS, "c2"),
-        "EBIT is $257,000, EBT is $206,500 and taxes are $47,495, so net income is $159,005."])
-    t = FinBot(model=model, kb=make_kb()).ask(NAKATOMI, thread_id="solver2")
-    assert "error" in t["tools"][0]["output"] and "23 percent" in t["tools"][0]["output"]["error"]
-    assert t["tools"][1]["output"]["result"]["net_income"] == pytest.approx(159_005)
+        tool_call("solve_financials", {**INCOME_ARGS, "tax_rate_pct": 0.3}, "c1"),
+        tool_call("solve_financials", INCOME_ARGS, "c2"),
+        "EBIT is $214,500, EBT is $176,000 and taxes are $52,800, so net income is $123,200."])
+    t = FinBot(model=model, kb=make_kb()).ask(INCOME_Q, thread_id="solver2")
+    err = t["tools"][0]["output"].get("error", "")
+    assert "tax_rate_pct=0.3" in err and "percent items take the percent number" in err
+    assert t["tools"][1]["output"]["result"]["net_income"] == pytest.approx(123_200)
     assert t["review"]["passed"], t["review"]
 
 
 # ---------- live defects (2026-10-16): worked back through net income, credit sales, DuPont, debt ratio
 def test_ebt_from_net_income_and_tax_rate_then_depreciation():
-    # sales 68,000, costs 31,500, addition to RE 6,100, dividends 2,100, interest 4,800, tax 24%:
-    # NI = 8,200 -> EBT = 8,200 / 0.76 = 10,789.47 -> EBIT = 15,589.47 -> depreciation = 20,910.53
-    out = solve_financials(sales=68000, costs=31500, addition_to_retained_earnings=6100, dividends=2100, interest=4800,
-                           tax_rate_pct=24, targets=["depreciation"])
+    # sales 92,000, costs 41,000, addition to RE 7,400, dividends 3,100, interest 5,600, tax 28%:
+    # NI = 10,500 -> EBT = 10,500 / 0.72 = 14,583.33 -> EBIT = 20,183.33 -> depreciation = 51,000 − 20,183.33 = 30,816.67
+    out = solve_financials(sales=92000, costs=41000, addition_to_retained_earnings=7400, dividends=3100, interest=5600,
+                           tax_rate_pct=28, targets=["depreciation"])
     vals = {s["variable"]: s["value"] for s in out["steps"]}
-    assert vals["net_income"] == pytest.approx(8200)
-    assert vals["ebt"] == pytest.approx(8200 / 0.76, abs=0.01)
-    assert vals["ebit"] == pytest.approx(8200 / 0.76 + 4800, abs=0.01)
-    assert out["result"]["depreciation"] == pytest.approx(68000 - 31500 - (8200 / 0.76 + 4800), abs=0.01)
-    assert round(out["result"]["depreciation"]) == 20911
+    assert vals["net_income"] == pytest.approx(10500)
+    assert vals["ebt"] == pytest.approx(10500 / 0.72, abs=0.01)
+    assert vals["ebit"] == pytest.approx(10500 / 0.72 + 5600, abs=0.01)
+    assert out["result"]["depreciation"] == pytest.approx(92000 - 41000 - (10500 / 0.72 + 5600), abs=0.01)
+    assert round(out["result"]["depreciation"]) == 30817
     assert step(out, "ebt")["formula"] == "ebt = net_income ÷ (1 − tax_rate_pct ÷ 100)"
     assert "warnings" not in out and "missing" not in out
 
 
 def test_net_income_shortcut_agrees_with_the_two_step_route():
-    out = solve_financials(**{k: v for k, v in NAKATOMI_ARGS.items() if k != "targets"}, targets=["net_income", "taxes"])
-    assert out["result"] == pytest.approx({"net_income": 159_005, "taxes": 47_495})
+    out = solve_financials(**{k: v for k, v in INCOME_ARGS.items() if k != "targets"}, targets=["net_income", "taxes"])
+    assert out["result"] == pytest.approx({"net_income": 123_200, "taxes": 52_800})
     assert "warnings" not in out
 
 
 def test_days_sales_in_receivables_with_credit_sales():
-    # NI 190,000, profit margin 9.1%, 85% of sales on credit, receivables 129,370 -> 26.61 days
-    out = solve_financials(net_income=190000, profit_margin_pct=9.1, credit_sales_pct=85, receivables=129370,
+    # NI 236,000, profit margin 7.4%, 80% of sales on credit, receivables 214,600:
+    # sales = 236,000 / 0.074 = 3,189,189.19; credit sales = 2,551,351.35; turnover = 11.8889 -> 365 / 11.8889 = 30.70 days
+    out = solve_financials(net_income=236000, profit_margin_pct=7.4, credit_sales_pct=80, receivables=214600,
                            targets=["days_sales_in_receivables"])
-    sales = 190000 / 0.091
-    assert step(out, "credit_sales")["value"] == pytest.approx(0.85 * sales, abs=0.01)
+    sales = 236000 / 0.074
+    assert step(out, "credit_sales")["value"] == pytest.approx(0.80 * sales, abs=0.01)
     assert step(out, "receivables_turnover")["formula"] == "receivables_turnover = credit_sales ÷ receivables"
-    assert out["result"]["days_sales_in_receivables"] == pytest.approx(365 / (0.85 * sales / 129370), abs=1e-4)
-    assert round(out["result"]["days_sales_in_receivables"], 2) == 26.61
+    assert out["result"]["days_sales_in_receivables"] == pytest.approx(365 / (0.80 * sales / 214600), abs=1e-4)
+    assert round(out["result"]["days_sales_in_receivables"], 2) == 30.70
     assert "warnings" not in out
 
 
@@ -266,14 +273,15 @@ def test_without_credit_figures_receivables_turnover_uses_total_sales():
 
 
 def test_dupont_net_income_from_debt_equity_and_roe():
-    # sales 6,269, total assets 2,885, D/E 1.80, ROE 12% -> NI = 0.12 × 2,885 ÷ 2.8 = 123.64
-    out = solve_financials(sales=6269, total_assets=2885, debt_equity_ratio=1.8, roe_pct=12, targets=["net_income"])
-    assert out["result"]["net_income"] == pytest.approx(0.12 * 2885 / 2.8, abs=1e-4)
-    assert round(out["result"]["net_income"], 2) == 123.64
+    # sales 8,450, total assets 3,920, D/E 1.35, ROE 14% -> equity = 3,920 ÷ 2.35 = 1,668.09; NI = 0.14 × 1,668.09 = 233.53
+    out = solve_financials(sales=8450, total_assets=3920, debt_equity_ratio=1.35, roe_pct=14, targets=["net_income"])
+    assert out["result"]["net_income"] == pytest.approx(0.14 * 3920 / 2.35, abs=1e-4)
+    assert round(out["result"]["net_income"], 2) == 233.53
     assert "warnings" not in out
 
 
-@pytest.mark.parametrize("debt_ratio,roa,roe", [(0.35, 9, 13.85), (0.25, 13, 17.33)])
+# ROE = ROA ÷ (1 − debt ratio): 7 ÷ 0.55 = 12.727 -> 12.73; 10 ÷ 0.70 = 14.286 -> 14.29
+@pytest.mark.parametrize("debt_ratio,roa,roe", [(0.45, 7, 12.73), (0.30, 10, 14.29)])
 def test_roe_from_debt_ratio_and_roa(debt_ratio, roa, roe):
     out = solve_financials(debt_ratio=debt_ratio, roa_pct=roa, targets=["roe_pct"])
     assert out["result"]["roe_pct"] == pytest.approx(roa / (1 - debt_ratio), abs=1e-6)
@@ -318,10 +326,10 @@ def test_graph_wrong_calculator_working_is_caught_and_solver_fixes_it():
 # ---------- common alternative names are mapped, not rejected (a live run sent interest_expense, then dropped interest)
 def test_alias_names_are_mapped_to_canonical_items():
     from finbot.tools.registry import TOOLS_BY_NAME
-    args = {"sales": 68000, "costs": 31500, "addition_to_retained_earnings": 6100, "dividends_paid": 2100,
-            "interest_expense": 4800, "tax_rate_pct": 24, "targets": ["depreciation_expense"]}
+    args = {"sales": 92000, "costs": 41000, "addition_to_retained_earnings": 7400, "dividends_paid": 3100,
+            "interest_expense": 5600, "tax_rate_pct": 28, "targets": ["depreciation_expense"]}
     out = json.loads(TOOLS_BY_NAME["solve_financials"].invoke(args))
-    assert out["result"]["depreciation"] == pytest.approx(20910.53, abs=0.01)
+    assert out["result"]["depreciation"] == pytest.approx(30816.67, abs=0.01)      # as worked above
     assert solve_financials(revenue=600, net_profit=60, targets=["profit_margin_pct"])["result"]["profit_margin_pct"] == pytest.approx(10)
 
 
@@ -332,9 +340,9 @@ def test_alias_conflicting_with_its_canonical_name_is_an_error():
 
 def test_grounding_checks_units_under_alias_names_too():
     from finbot.graph import ungrounded_values
-    bad = ungrounded_values({"sales": 675000, "tax_rate": 0.23}, NAKATOMI, "solve_financials")
-    assert len(bad) == 1 and bad[0].startswith("tax_rate=0.23") and "23 percent" in bad[0]
-    assert ungrounded_values({"interest_expense": 50500, "tax_rate": 23}, NAKATOMI, "solve_financials") == []
+    bad = ungrounded_values({"sales": 548000, "tax_rate": 0.3}, INCOME_Q, "solve_financials")
+    assert len(bad) == 1 and bad[0].startswith("tax_rate=0.3") and "percent items take the percent number" in bad[0]
+    assert ungrounded_values({"interest_expense": 38500, "tax_rate": 30}, INCOME_Q, "solve_financials") == []
 
 
 @pytest.mark.parametrize("alias,name", [
@@ -351,12 +359,12 @@ def test_alias_names_seen_in_live_runs_resolve(alias, name):
 def test_live_alias_calls_now_solve():
     from finbot.tools.registry import TOOLS_BY_NAME
     tool = TOOLS_BY_NAME["solve_financials"]
-    y3k = json.loads(tool.invoke({"debt_equity_ratio": 1.8, "return_on_equity_pct": 12, "sales": 6269, "total_assets": 2885,
-                                  "targets": ["net_income"]}))
-    assert round(y3k["result"]["net_income"], 2) == 123.64
-    dsr = json.loads(tool.invoke({"net_income": 190000, "profit_margin_pct": 9.1, "accounts_receivable": 129370,
-                                  "credit_sales_pct": 85, "targets": ["sales", "days_sales_in_receivables"], "tax_rate_pct": 0}))
-    assert round(dsr["result"]["days_sales_in_receivables"], 2) == 26.61
+    dupont = json.loads(tool.invoke({"debt_equity_ratio": 1.35, "return_on_equity_pct": 14, "sales": 8450, "total_assets": 3920,
+                                     "targets": ["net_income"]}))
+    assert round(dupont["result"]["net_income"], 2) == 233.53                    # 0.14 × 3,920 ÷ 2.35
+    dsr = json.loads(tool.invoke({"net_income": 236000, "profit_margin_pct": 7.4, "accounts_receivable": 214600,
+                                  "credit_sales_pct": 80, "targets": ["sales", "days_sales_in_receivables"], "tax_rate_pct": 0}))
+    assert round(dsr["result"]["days_sales_in_receivables"], 2) == 30.70         # 365 × 214,600 ÷ 2,551,351.35
 
 
 # ---------- other_expenses: EBIT = sales − cogs − other expenses − depreciation; one call per year (SPEC 4.1, 2026-10-17)

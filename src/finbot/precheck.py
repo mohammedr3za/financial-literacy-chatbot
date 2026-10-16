@@ -180,7 +180,7 @@ def precheck(user_text: str, previous_question: str | None = None) -> PrecheckRe
         calc_types = [k for k in calc_types if k != "statement"]
     elif set(calc_types) - {"statement", "percent"} and not (_STATEMENT.search(clean) or _CORPORATE.search(clean)
                                                              or _STATEMENT_DOC.search(clean)):
-        statement = False          # several numbered lines ("Note: round to 2 decimals, e.g., 32.16") are not a pasted statement
+        statement = False          # several numbered lines ("Note: give 2 decimals, for example 45.67") are not a pasted statement
         calc_types = [k for k in calc_types if k != "statement"]
     # a follow-up keeps the previous question's currency ("what if the rate were 9%?" after a $ question)
     usd = bool(re.search(r"\$\s?\d|\bUSD\b|\bdollars?\b", routed_text, re.I)) and not re.search(

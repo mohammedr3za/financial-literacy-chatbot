@@ -15,8 +15,8 @@ TOOL_DESC = {   # short tool descriptions; the per-question routing hints carry 
     "solve_financials": (
         "Solve textbook statement and ratio problems (income statement, liquidity, turnover, leverage, DuPont, payout, "
         "growth, market value). Pass EVERY figure the question gives under its name and the asked item(s) in targets; the "
-        "tool picks the formulas. *_pct items take the percent number (23 percent -> 23); ratios are plain numbers (.84 -> "
-        "0.84). Never compute an input yourself. One call per year for multi-year statements."),
+        "tool picks the formulas. *_pct items take the percent number (23 percent -> 23); ratios are plain numbers (.75 -> "
+        "0.75). Never compute an input yourself. One call per year for multi-year statements."),
     "financial_ratios": ("Ratio analysis of pasted statements (liquidity, leverage, profitability, efficiency, cash, DuPont). "
                          "Pass every item given, exactly as given and in the same units."),
     "cash_flow_statement": ("Cash flow statement, indirect method (CFO, CFI, CFF, net change, reconciliation). Only items "
@@ -48,7 +48,7 @@ KEEP_PROP_DESC = {   # solve_financials: names explain themselves; only these ke
     "project_cash_flows": {"sales": "Number, or list per year.", "units": "Number, or list per year.",
                            "price_per_unit": "Leave out to solve the bid price.", "costs": "Cash operating costs a year.",
                            "variable_cost_per_unit": "In dollars or rupees.",
-                           "variable_cost_cents_per_unit": "Cost in cents as written (.50 cents -> 0.5).",
+                           "variable_cost_cents_per_unit": "Cost in cents as written (.40 cents -> 0.4).",
                            "variable_cost_pct": "Percent of sales.", "ocf": "Only if given directly.",
                            "investment": "Fixed assets at year 0.", "depreciation_years": "Tax life if not years.",
                            "macrs_rates_pct": "Rates in percent as given.", "salvage": "Pretax market value at the end.",

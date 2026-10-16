@@ -143,7 +143,7 @@ HINTS = {
                 "calculate too; never work out a figure yourself."),
     "statement": ("Call solve_financials FIRST whenever the question gives statement items or ratios and asks for another item "
                   "(income statement, ratio algebra, DuPont, growth rates, market value ratios): pass every figure from the question "
-                  "under its name (percent items in percent: 23 percent -> tax_rate_pct=23; ratios as plain numbers: .84 -> 0.84) and "
+                  "under its name (percent items in percent: 23 percent -> tax_rate_pct=23; ratios as plain numbers: .75 -> 0.75) and "
                   "targets=[the item(s) asked]. It picks the formulas; never write your own formula, and quote its step values. "
                   "For statements covering two or more years, call it once per year. If COGS and other expenses are listed "
                   "separately, pass cogs and other_expenses (not costs); if dividends are given, pass them and add "
