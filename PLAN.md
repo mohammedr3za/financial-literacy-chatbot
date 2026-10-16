@@ -70,3 +70,10 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - Reference values come from textbooks, not our code: EMI ₹17,356.46 (₹20 lakh, 8.5%, 240 months); SIP ₹23,23,390.76 (₹10,000/month, 12%, 10 years); bond Macaulay duration 4.1699 (5-year 10% par); Black-Scholes call 4.7594 / put 0.8086 (Hull's example).
 - Rejected inputs include `__import__('os')`, attribute access, lists, `10**10**10`, unknown names, and `20,00,000` (with a hint to drop separators).
 - Bug found by the tests and fixed: solving `tvm` for years overflowed because the search started at 10,000 periods; the search range now grows step by step.
+
+### 2026-10-16 — Blockers and parallel work
+- M2 acceptance is waiting on indexing the 15 downloaded documents (629-page book included). The corpus itself is in `kb/raw/` with a 15-row `kb/sources.csv`.
+- M3 acceptance is waiting on the index and on a speed fix. In the first end-to-end run (no index), answers took 32–66 s. The Mac was swapping about 7.9 GB because the `qwen3.5:9b` default variant (nvfp4 on MLX) uses 10.6 GB. `qwen3.5:9b-q4_K_M` is being downloaded to compare.
+- The first end-to-end run also found fake `[S1]` citations and a wrong crypto tax rule. Review checks 6–8 were added (SPEC changelog).
+- M4 code (`app.py`, `run_demo.sh`) and M5 code are being written in parallel, per the CLAUDE.md exception for blocked milestones.
+- Corpus gaps: the official Income Tax VDA PDF blocked automated download (a partial ITR-2 FAQ page was saved instead). The Income-tax Act, 2025 has applied since 2026-04-01, so section numbers such as 194S changed.

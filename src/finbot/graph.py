@@ -169,10 +169,19 @@ class FinBot:
         self.settings = settings or get_settings()
         self.graph = build_graph(model=model, kb=kb, settings=self.settings)
 
-    def ask(self, text: str, thread_id: str = "default", use_rag: bool = True) -> dict:
+    def ask_iter(self, text: str, thread_id: str = "default", use_rag: bool = True):
+        """Yields {"event": "step", "node": ..., "update": ...} per graph step, then {"event": "done", "trace": ...}."""
+        cfg = {"configurable": {"thread_id": thread_id, "use_rag": use_rag}, "recursion_limit": 40}
         t0 = time.time()
-        state = self.graph.invoke({"user_input": text},
-                                  {"configurable": {"thread_id": thread_id, "use_rag": use_rag}, "recursion_limit": 40})
-        trace = turn_trace(state)
+        for chunk in self.graph.stream({"user_input": text}, cfg, stream_mode="updates"):
+            for node, update in chunk.items():
+                yield {"event": "step", "node": node, "update": update or {}}
+        trace = turn_trace(self.graph.get_state(cfg).values)
         trace["latency_s"] = round(time.time() - t0, 2)
-        return trace
+        yield {"event": "done", "trace": trace}
+
+    def ask(self, text: str, thread_id: str = "default", use_rag: bool = True) -> dict:
+        for event in self.ask_iter(text, thread_id, use_rag):
+            if event["event"] == "done":
+                return event["trace"]
+        raise RuntimeError("graph finished without a result")
