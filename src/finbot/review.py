@@ -443,6 +443,11 @@ _ASKS_INPUT = re.compile(r"(?i)\b(please (provide|share|give|tell)|could you (pr
                          r"need the|missing|not (given|provided|specified|stated)|without (the|knowing))\b")
 
 
+def asks_for_inputs(text: str) -> bool:
+    """The answer asks the user for missing figures (check 12's request); such a draft is never forced to call a tool."""
+    return bool(_ASKS_INPUT.search(text or ""))
+
+
 def has_hypothetical_example(text: str) -> bool:
     m = _HYPOTHETICAL.search(text or "")
     return bool(m and _ASKS_INPUT.search(text) and re.search(r"\d", text[m.start():]))

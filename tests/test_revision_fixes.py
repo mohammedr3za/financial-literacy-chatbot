@@ -106,3 +106,12 @@ def test_ollama_sends_full_schemas_unless_compact_tools_is_on():
     _, compact = get_runnables(CALC_TOOLS, Settings(backend="ollama", compact_tools_ollama=True))
     assert compact.kwargs["tools"] == compact_tool_schemas(CALC_TOOLS)
     assert len(str(full.kwargs["tools"])) > len(str(compact.kwargs["tools"])) * 1.3
+
+
+def test_draft_that_asks_for_missing_inputs_is_not_forced_to_call_a_tool():
+    forced = ScriptedModel(responses=[])          # forcing here made the model call npv_irr([-10000]) and lose the request
+    ask_inputs = ("To work out the NPV I need the cash inflows for each year and the discount rate. The cost of "
+                  "₹10,000 is given. Please share the cash flows and the rate.")
+    fb, _ = bot(ask_inputs, ask_inputs, forced=forced)
+    t = fb.ask("What is the NPV of a project that costs ₹10,000?", thread_id="inputs")
+    assert forced.calls == [] and "Please share the cash flows" in t["answer_text"]

@@ -12,8 +12,8 @@ from langgraph.graph.message import add_messages
 from .config import Settings, get_settings
 from .precheck import precheck as run_precheck
 from .prompts import SYSTEM_PROMPT, context_block
-from .review import (FOOTER, _strip_math_markup, cut_hypothetical, prune_figures, review_answer, reviewer_note,
-                     unsupported_figures)
+from .review import (FOOTER, _strip_math_markup, asks_for_inputs, cut_hypothetical, prune_figures, review_answer,
+                     reviewer_note, unsupported_figures)
 from .tables import to_markdown
 from .tools.financial_solver import KIND as SOLVER_KIND
 from .tools.financial_solver import resolve as solver_name
@@ -498,9 +498,11 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
 
         capped = state.get("tool_iterations", 0) >= s.max_tool_iterations
         last = msgs[-1]
+        codes = set(state.get("review", {}).get("codes", []))
+        draft = next((m for m in reversed(msgs) if isinstance(m, AIMessage)), None)
         force = (forced_model is not None and not capped and state["flags"].get("calc_types")
-                 and isinstance(last, HumanMessage) and last.name == "reviewer"
-                 and FORCE_TOOL_CODES & set(state.get("review", {}).get("codes", [])))
+                 and isinstance(last, HumanMessage) and last.name == "reviewer" and FORCE_TOOL_CODES & codes
+                 and "hypothetical_example" not in codes and not asks_for_inputs(text_of(draft) if draft else ""))
         runner = forced_model if force else model if capped else model_with_tools
         try:
             response = runner.invoke(model_input(trim=False))
