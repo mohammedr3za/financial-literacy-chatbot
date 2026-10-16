@@ -5,6 +5,10 @@ Run on the rented GPU box, with vLLM serving the teacher (see train/README.md):
   uv run python train/make_dataset.py --n-kb 1000 --n-calc 500
 Smoke test on the Mac with the local model as a stand-in teacher:
   uv run python train/make_dataset.py --n-kb 3 --n-calc 3 --out train/data/smoke.jsonl
+From a collected question file (JSONL with id, question, type, gold_answer; see train/data/questions_v2):
+  ... train/make_dataset.py --questions train/data/questions_v2/questions.jsonl --out train/data/sft_v2.jsonl
+  Numeric questions with a gold answer are kept only if the answer contains it (within 1%). Every attempt, kept or
+  not, goes to <out>.attempts.jsonl for evaluation. Re-running skips ids already attempted.
 
 Only transcripts that pass every review check on the first draft are kept. Calculation transcripts must
 also call the right tool with the right inputs. Questions too similar to the benchmark are dropped.
@@ -116,6 +120,8 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--out", default=str(ROOT / "train/data/sft.jsonl"))
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--questions", help="JSONL of collected questions; replaces --n-kb/--n-calc generation")
+    ap.add_argument("--limit", type=int)
     a = ap.parse_args()
     from finbot.graph import FinBot
     from finbot.llm import get_runnables
@@ -123,6 +129,8 @@ def main() -> int:
     rng = random.Random(a.seed)
     teacher, _ = get_runnables(CALC_TOOLS)
     bench = benchmark_questions()
+    if a.questions:
+        return run_questions(a, bench)
     chunks = [json.loads(line) for line in (ROOT / "kb/index/chunks.jsonl").read_text().splitlines()]
     guide = [c for c in chunks if c["kind"] == "guidelines"]
     books = [c for c in chunks if c["kind"] == "books"]
@@ -191,6 +199,78 @@ def main() -> int:
                 if counts["done"] % 25 == 0:
                     print(f"{counts['done']}/{len(jobs)} {counts}", flush=True)
     f.close()
+    print(f"done: {counts} -> {out}", flush=True)
+    return 0
+
+
+def gold_numbers(gold) -> list[float]:
+    """Numbers in a gold answer string like '26.61 days' or '$1,228,200; 5.78%'."""
+    vals = []
+    for m in re.findall(r"-?\(?\$?-?[\d,]*\.?\d+\)?", str(gold or "")):
+        t = m.replace("$", "").replace(",", "")
+        neg = t.startswith("(") and t.endswith(")")
+        try:
+            v = float(t.strip("()"))
+        except ValueError:
+            continue
+        vals.append(-v if neg else v)
+    return vals
+
+
+def run_questions(a, bench) -> int:
+    """Teacher transcripts for collected questions; every attempt is logged for evaluation."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+    from bench.scoring import calc_correct
+    from finbot.graph import FinBot
+    from finbot.tools.registry import CALC_TOOLS
+    items = [json.loads(line) for line in Path(a.questions).read_text(encoding="utf-8").splitlines() if line.strip()]
+    out, attempts = Path(a.out), Path(a.out + ".attempts.jsonl")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    done = {json.loads(line)["id"] for line in attempts.read_text().splitlines()} if attempts.exists() else set()
+    todo = [q for q in items if q.get("id") not in done][: a.limit]
+    print(f"{len(todo)} to run ({len(done)} already attempted) -> {out}", flush=True)
+    schemas = [convert_to_openai_tool(t) for t in CALC_TOOLS]
+    local, lock = threading.local(), threading.Lock()
+    counts = {"kept": 0, "dup": 0, "review": 0, "wrong": 0, "error": 0}
+
+    def run(q):
+        if similar_to_benchmark(q["question"], bench):
+            return q, "dup", None, {}
+        if not hasattr(local, "bot"):
+            local.bot = FinBot()
+        try:
+            t = local.bot.ask(q["question"], thread_id=f"gen-{q['id']}")
+        except Exception as exc:
+            return q, "error", None, {"error": repr(exc)[:300]}
+        info = {"answer": t["answer"], "tools": t["tools"], "review": t["review"], "revisions": t["revisions"],
+                "latency_s": t["latency_s"], "flags": t["flags"]}
+        golds = gold_numbers(q.get("gold_answer")) if q.get("type") == "numeric" else []
+        if golds:
+            info["gold_ok"] = all(calc_correct(t["answer"], q["question"], g, 1.0)[0] for g in golds[:6])
+        if not t["review"].get("passed") or t["revisions"]:
+            return q, "review", None, info
+        if golds and not info["gold_ok"]:
+            return q, "wrong", None, info
+        state = local.bot.graph.get_state({"configurable": {"thread_id": f"gen-{q['id']}"}}).values
+        rec = to_record(state)
+        if not rec:
+            return q, "review", None, info
+        rec.update(tools=schemas, source=q.get("source", "collected"), qid=q["id"], qtype=q.get("type"))
+        return q, "kept", rec, info
+
+    with out.open("a", encoding="utf-8") as f, attempts.open("a", encoding="utf-8") as fa, ThreadPoolExecutor(a.workers) as pool:
+        for i, (q, status, rec, info) in enumerate(pool.map(run, todo), 1):
+            with lock:
+                counts[status] += 1
+                if rec:
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n"); f.flush()
+                fa.write(json.dumps({"id": q["id"], "type": q.get("type"), "topic": q.get("topic"), "status": status,
+                                     "question": q["question"], "gold_answer": q.get("gold_answer"), **info},
+                                    ensure_ascii=False) + "\n"); fa.flush()
+                if i % 20 == 0:
+                    print(f"{i}/{len(todo)} {counts}", flush=True)
     print(f"done: {counts} -> {out}", flush=True)
     return 0
 
