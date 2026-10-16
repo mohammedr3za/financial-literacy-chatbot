@@ -138,3 +138,22 @@ def test_followup_without_tool_is_rejected_in_graph():
 def test_sip_question_is_not_also_lump_sum():
     t = precheck("If I put ₹10,000 a month in a SIP for 15 years at 12% a year, how much will I have?").flags["calc_types"]
     assert t == ["sip_fv"]
+
+
+@pytest.mark.parametrize("q", [
+    "explain to me what is npv and how it works, and explain why we do discounting eli5",
+    "What is IRR? eli5",
+    "Explain bond duration in 2 sentences",
+])
+def test_concept_questions_without_quantities_are_not_routed(q):
+    f = precheck(q).flags
+    assert f["calc_types"] == [] and not f["calculation_intent"]
+
+
+@pytest.mark.parametrize("q,kind", [
+    ("What is the NPV at 10% of a project costing ₹50,000 with inflows of ₹20,000 for 3 years?", "npv_irr"),
+    ("How many years to double at 9%?", "years"),
+    ("EMI on 50k for 2 years at 14%", "emi"),
+])
+def test_real_quantities_still_route(q, kind):
+    assert kind in precheck(q).flags["calc_types"]

@@ -14,3 +14,10 @@ FinBot runs in two places with the same code: the Mac (Streamlit app, `qwen3:8b`
 6. Open https://finbot-blond.vercel.app on a phone and ask the EMI example.
 
 The quick tunnel URL changes every time the tunnel restarts, so repeat step 5 after any restart.
+
+## Before terminating the GPU instance
+Download the "Report a problem" submissions first; they live on the instance and are lost when it is terminated:
+```bash
+mkdir -p results/reports && scp ubuntu@<ip>:~/finbot/results/reports/reports.jsonl results/reports/gpu-$(date +%Y%m%d-%H%M).jsonl
+uv run python scripts/show_reports.py --path results/reports/gpu-<timestamp>.jsonl
+```

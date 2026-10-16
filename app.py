@@ -10,6 +10,7 @@ from finbot.config import get_settings
 from finbot.followups import suggest
 from finbot.graph import FinBot
 from finbot.precheck import redact
+from finbot.reports import save_report, turn_record
 from finbot.tables import to_html
 
 st.set_page_config(page_title="FinBot", page_icon="✳", layout="centered", initial_sidebar_state="collapsed")
@@ -32,6 +33,8 @@ header[data-testid="stHeader"] { background: transparent; }
 .st-key-examples button:hover { border-color: var(--fb-ink); color: var(--fb-ink); background: #fff; }
 .st-key-examples button p { font-size: 13px; text-align: left; }
 .st-key-followups { margin-top: .4rem; }
+[data-testid="stPopover"] button { background: transparent; border: none; box-shadow: none; padding: 0; min-height: 0; }
+[data-testid="stPopover"] button p { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--fb-muted); }
 .st-key-followups button { background: transparent; border: 1px solid var(--fb-line); color: #444; box-shadow: none; min-height: 0;
                            padding: .3rem .85rem; }
 .st-key-followups button:hover { border-color: var(--fb-accent); color: var(--fb-accent); background: transparent; }
@@ -192,6 +195,11 @@ for idx, m in enumerate(st.session_state.history):
             st.markdown(m["content"], unsafe_allow_html=True)  # already escaped when stored
         else:
             render_answer(m["trace"])
+            with st.popover("Report a problem"):
+                note = st.text_area("What was wrong? (optional)", key=f"rnote{idx}", max_chars=1000)
+                if st.button("Send report", key=f"rsend{idx}"):
+                    convo = [turn_record(h["trace"]) for h in st.session_state.history[: idx + 1] if h.get("trace")]
+                    st.success(f"Saved for review (report {save_report(convo, note, channel='mac-app')}).")
             if idx == len(st.session_state.history) - 1:  # follow-up chips under the latest answer only
                 chips = suggest(m["trace"])
                 with st.container(key="followups"):

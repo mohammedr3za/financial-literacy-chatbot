@@ -64,3 +64,26 @@ def test_attachment_becomes_table_in_question():
     r = post(c, "Ratios?", attachment={"name": "bs.csv", "content_b64": csv})
     d = done_event(r.text)
     assert r.status_code == 200 and d["flags"].get("statement_data") and d["tables"][0]["title"] == "Financial ratios"
+
+
+def test_report_saves_server_side_conversation(tmp_path, monkeypatch):
+    monkeypatch.setenv("FINBOT_REPORTS_DIR", str(tmp_path))
+    c = client(tool_call("loan_emi", {"principal": 2000000, "annual_rate_pct": 8.5, "months": 240}, "c1"),
+               "Your EMI is ₹17,356.46.")
+    d = done_event(post(c, "My PAN is ABCDE1234F. EMI on ₹20 lakh at 8.5% for 20 years?").text)
+    r = c.post("/api/report", json={"turn_id": d["turn_id"], "note": "the table is too long"},
+               headers={"Authorization": f"Bearer {TOKEN}", "X-Client-IP": "2.2.2.2"})
+    assert r.status_code == 200 and r.json()["ok"]
+    rec = json.loads((tmp_path / "reports.jsonl").read_text().splitlines()[0])
+    assert rec["note"] == "the table is too long" and rec["channel"] == "web" and rec["turns"] == 1
+    turn = rec["conversation"][0]
+    assert "ABCDE1234F" not in json.dumps(rec) and "17,356.46" in turn["answer"] and turn["tools"][0]["name"] == "loan_emi"
+
+
+def test_report_rejects_unknown_turn_and_missing_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("FINBOT_REPORTS_DIR", str(tmp_path))
+    c = client()
+    h = {"Authorization": f"Bearer {TOKEN}"}
+    assert c.post("/api/report", json={"turn_id": "nosuchthread:0"}, headers=h).status_code == 404
+    assert c.post("/api/report", json={"turn_id": "nosuchthread:0"}).status_code == 401
+    assert c.post("/api/report", json={"turn_id": "x" * 10, "note": "n" * 1001}, headers=h).status_code == 422

@@ -161,6 +161,15 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
   - When the GPU is off, the page says FinBot is offline.
 - **Content rule:** the public index contains only redistributable documents (the official regulator documents and OpenStax, CC BY-NC-SA). The user's private books and any course material are never uploaded to the A100 or shown publicly.
 
+### 7.3 Report a problem (user request, 2026-10-16)
+- Every answer, on the public site and the Mac app, has a **Report a problem** link with an optional note (up to 1,000 characters).
+- **The server saves its own copy of the conversation** up to the reported answer: the questions as the model saw them (after redaction), the answers, the tool calls with inputs and outputs, the sources, the review result, the model and the latency.
+  - It does not trust text sent by the browser.
+  - It stores nothing about the visitor (no IP address).
+- Reports are appended to `results/reports/reports.jsonl` (git-ignored) on the machine that runs the API. `scripts/show_reports.py` lists them for triage.
+- On the GPU box, reports must be downloaded before the instance is terminated (`deploy/README.md`).
+- Limits: the same per-visitor rate limit as chat, and only answers from the last 25 turns of a live conversation can be reported.
+
 ## 8. Benchmark harness (`bench/`)
 - `questions.yaml` covers 8 base questions × 3 personas (novice, greedy-literate, anxious saver) × 3 framings (neutral, eager, leading). Member 2 owns its content.
 - `calc_problems.yaml` holds 30 problems with answers verified independently by hand or spreadsheet, scored with a 0.5% tolerance.
@@ -209,3 +218,4 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
 - 2026-10-16: Correction from the user: the Lambda GPU is **only for fine-tuning**, not for serving. Serving stays on the Mac (`qwen3:8b`). The OpenAI-compatible backend with fallback stays in the code for the fine-tune teacher.
 - 2026-10-16: The user wants FinBot both locally and on the GPU (more accurate and faster), plus a public Vercel frontend. Restored GPU serving as an option for the Mac app (with local fallback), and added section 7.2. The GPU is shared with fine-tuning: training pauses serving for about an hour.
 - 2026-10-16: Added the private McGraw course set (34 problems) as a test-only evaluation, and the 20-problem held-out set. Fine-tune data is about 900 teacher transcripts from Qwen3.6-27B on the A100.
+- 2026-10-16: Fixed a routing bug. "eli5" contains a digit, so an NPV *explanation* request was forced through the NPV calculator, and the model invented a project to satisfy it. Calculation routing now needs a real quantity (₹, %, lakh/crore/k, a decimal, or a number of 2+ digits), and the prompt says to explain concepts in plain words and to label any worked example as made up. Added section 7.3 (Report a problem).

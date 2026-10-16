@@ -14,8 +14,11 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from collections import OrderedDict
+
 from .attachments import table_text
 from .followups import suggest
+from .reports import MAX_NOTE, save_report, turn_record
 
 MAX_CHARS, MAX_TURNS, MAX_ATTACH, PER_MINUTE = 4000, 25, 200_000, 10
 STEP_LABELS = {"precheck": "Checking", "retrieve": "Searching sources", "tools": "Calculating", "review": "Reviewing",
@@ -25,6 +28,11 @@ STEP_LABELS = {"precheck": "Checking", "retrieve": "Searching sources", "tools":
 class Attachment(BaseModel):
     name: str = Field(max_length=200)
     content_b64: str
+
+
+class ReportRequest(BaseModel):
+    turn_id: str = Field(min_length=8, max_length=100)
+    note: str = Field(default="", max_length=MAX_NOTE)
 
 
 class ChatRequest(BaseModel):
@@ -56,6 +64,17 @@ def create_app(bot_factory=None, token: str | None = None) -> FastAPI:
     lock = threading.Lock()
     hits: dict[str, deque] = defaultdict(deque)
     turns: dict[str, int] = defaultdict(int)
+    history: "OrderedDict[str, list[dict]]" = OrderedDict()   # thread -> server-side turn records, for reports
+    MAX_THREADS = 2000
+
+    def remember(thread_id: str, trace: dict) -> str:
+        with lock:
+            log = history.setdefault(thread_id, [])
+            history.move_to_end(thread_id)
+            log.append(turn_record(trace))
+            while len(history) > MAX_THREADS:
+                history.popitem(last=False)
+            return f"{thread_id}:{len(log) - 1}"
 
     def bot():
         with lock:
@@ -114,11 +133,26 @@ def create_app(bot_factory=None, token: str | None = None) -> FastAPI:
                             label = f"Calling {calls[0]['name']}" if calls else "Writing"
                         yield f"event: step\ndata: {json.dumps({'label': label})}\n\n"
                     else:
-                        yield f"event: done\ndata: {json.dumps(public_trace(ev['trace']), ensure_ascii=False)}\n\n"
+                        payload = public_trace(ev["trace"])
+                        payload["turn_id"] = remember(req.thread_id, ev["trace"])
+                        yield f"event: done\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
             except Exception:  # never leak internals to the public page
                 yield f"event: error\ndata: {json.dumps({'detail': 'FinBot could not answer right now. Please try again.'})}\n\n"
 
         return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @app.post("/api/report")
+    def report(req: ReportRequest, request: Request, authorization: str | None = Header(default=None),
+               x_client_ip: str | None = Header(default=None)):
+        check_auth(authorization)
+        check_rate(x_client_ip or (request.client.host if request.client else "unknown"))
+        thread_id, _, idx = req.turn_id.rpartition(":")
+        with lock:
+            log = history.get(thread_id)
+            if log is None or not idx.isdigit() or int(idx) >= len(log):
+                raise HTTPException(status_code=404, detail="That answer can no longer be reported.")
+            conversation = log[: int(idx) + 1]
+        return {"ok": True, "report_id": save_report(conversation, req.note, channel="web")}
 
     @app.exception_handler(HTTPException)
     def http_error(_, exc: HTTPException):

@@ -110,7 +110,32 @@ function renderAnswer(box, t) {
   if ((t.redactions || []).length) box.append(el("div", "warn", `Removed ${t.redactions.join(", ")} before it reached the model. Please don't share personal details.`));
   const ans = el("div", "answer"); ans.innerHTML = markdown(t.answer_text); box.append(ans);
   for (const tb of t.tables || []) box.append(table(tb));
-  box.append(details(t), followups(t.followups));
+  box.append(details(t), reportLink(t.turn_id), followups(t.followups));
+}
+function reportLink(turnId) {
+  const wrap = el("div", "report");
+  if (!turnId) return wrap;
+  const link = el("button", "linkbtn", "Report a problem"); link.type = "button";
+  link.onclick = () => {
+    link.hidden = true;
+    const form = el("form", "reportform"), note = el("textarea", "", null);
+    note.placeholder = "What was wrong? (optional)"; note.maxLength = 1000; note.rows = 2;
+    const send = el("button", "chip", "Send report"), cancel = el("button", "linkbtn", "Cancel");
+    send.type = "submit"; cancel.type = "button";
+    cancel.onclick = () => { form.remove(); link.hidden = false; };
+    form.onsubmit = async (e) => {
+      e.preventDefault(); send.disabled = true;
+      try {
+        const r = await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ turn_id: turnId, note: note.value }) });
+        const j = await r.json().catch(() => ({}));
+        form.replaceWith(el("div", r.ok ? "note" : "warn", r.ok ? "Thanks. This answer was saved for review." : (j.detail || "Could not send the report.")));
+      } catch (_) { form.replaceWith(el("div", "warn", "Could not send the report.")); }
+    };
+    form.append(note, send, cancel); wrap.append(form); note.focus();
+  };
+  wrap.append(link);
+  return wrap;
 }
 
 $("#form").onsubmit = (e) => { e.preventDefault(); const v = $("#input").value; $("#input").value = ""; autosize(); const f = attachment; attachment = null; $("#attachment").hidden = true; $("#file").value = ""; ask(v, f); };

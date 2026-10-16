@@ -58,6 +58,15 @@ def _plain(v: float) -> str:
     return str(int(v)) if float(v).is_integer() else f"{v:.2f}"
 
 
+_QUANTITY = re.compile(r"(?i)(?<![a-z\d])(₹\s*\d|rs\.?\s*\d|\d[\d,]*(\.\d+)?\s*(%|per ?cent|lakhs?|lacs?|crores?|cr\b|k\b)|\d[\d,]*\.\d+|\d{2,})")
+
+
+def has_quantity(text: str) -> bool:
+    """A real quantity: ₹ amount, percentage, lakh/crore/k, a decimal, or a number of 2+ digits. Digits inside words
+    ("eli5", "ITR2") and lone single digits do not count, so concept questions are not forced into calculations."""
+    return bool(_QUANTITY.search(text.replace("[REDACTED", "")))
+
+
 def is_tabular(text: str) -> bool:
     """Pasted statements: several lines carrying numbers, or table separators."""
     numeric_lines = [ln for ln in text.splitlines() if re.search(r"\d", ln)]
@@ -131,11 +140,11 @@ def is_followup(text: str) -> bool:
 def precheck(user_text: str, previous_question: str | None = None) -> PrecheckResult:
     clean, redactions = redact(user_text)
     normalized, amounts = normalize_amounts(clean)
-    has_number = bool(re.search(r"\d", clean.replace("[REDACTED", "")))
+    has_number = has_quantity(clean)
     statement = bool(_STATEMENT.search(clean)) and has_number or is_tabular(clean)
     followup = bool(previous_question) and is_followup(clean)
     routed_text = f"{redact(previous_question)[0]} {clean}" if followup else clean
-    calc_types = detect_calc_types(routed_text, bool(re.search(r"\d", routed_text)), statement)
+    calc_types = detect_calc_types(routed_text, has_quantity(routed_text), statement)
     flags = {
         "followup": followup and bool(calc_types),   # only calculation follow-ups get the "reuse the numbers" note
         "calc_types": calc_types,
