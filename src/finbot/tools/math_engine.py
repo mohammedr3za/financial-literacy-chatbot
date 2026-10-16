@@ -67,8 +67,21 @@ def calculate(expression: str) -> dict:
         tree = ast.parse(normalized, mode="eval")
     except SyntaxError as exc:
         raise ValueError(f"Could not parse the expression: {exc.msg}.") from None
+    steps: list[dict] = []
+
+    def walk(node):
+        v = _eval(node)
+        if isinstance(node, (ast.BinOp, ast.Call)) and len(steps) < 20:
+            seg = ast.get_source_segment(normalized, node)
+            if seg:
+                steps.append({"step": seg.strip(), "value": round(v, 6)})
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.BinOp, ast.Call)):
+                walk(child)
+        return v
+
     try:
-        value = _eval(tree)
+        value = walk(tree.body)
     except ZeroDivisionError:
         raise ValueError("Division by zero.") from None
     except OverflowError:
@@ -76,7 +89,8 @@ def calculate(expression: str) -> dict:
     if not math.isfinite(value):
         raise ValueError("The result is not a finite number.")
     return {"inputs": {"expression": expression}, "formula": normalized,
-            "result": {"value": value, "rounded": round(value, 6)}, "formatted": {}}
+            "result": {"value": value, "rounded": round(value, 6),
+                       "steps": sorted(steps, key=lambda x: len(x["step"]))}, "formatted": {}}
 
 
 # ------------------------------------------------------------------ equations

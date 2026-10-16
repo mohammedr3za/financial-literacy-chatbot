@@ -9,6 +9,7 @@ requires-python = ">=3.12"
 dependencies = [
     "langchain-core>=1.6.11",
     "langchain-ollama>=1.1.0",
+    "langchain-openai>=1.7.2",
     "langgraph>=1.2.15",
     "matplotlib>=3.11.2",
     "numpy>=2.5.4",

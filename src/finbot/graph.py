@@ -68,6 +68,7 @@ class State(TypedDict, total=False):
     revisions: int
     review: dict
     tables: list[dict]
+    served_by: str
 
 
 def text_of(msg: AnyMessage) -> str:
@@ -89,9 +90,10 @@ def _load_kb(settings: Settings):
 def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, checkpointer=None):
     s = settings or get_settings()
     if model is None:
-        from .llm import get_chat_model
-        model = get_chat_model(s)
-    model_with_tools = model.bind_tools(CALC_TOOLS)
+        from .llm import get_runnables
+        model, model_with_tools = get_runnables(CALC_TOOLS, s)
+    else:
+        model_with_tools = model.bind_tools(CALC_TOOLS)
     if kb == "auto":
         kb = _load_kb(s)
 
@@ -126,7 +128,8 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         response = (model if capped else model_with_tools).invoke(model_input)
         if capped and getattr(response, "tool_calls", None):  # defensive: never loop past the cap
             response = AIMessage(content=text_of(response) or "I could not finish the calculation.", id=response.id)
-        return {"messages": [response],
+        meta = getattr(response, "response_metadata", None) or {}
+        return {"messages": [response], "served_by": meta.get("model_name") or meta.get("model") or "",
                 "tool_iterations": state.get("tool_iterations", 0) + (1 if getattr(response, "tool_calls", None) else 0)}
 
     def tools(state: State) -> dict:
@@ -242,6 +245,7 @@ def turn_trace(state: dict) -> dict:
                      "dense": h.get("dense"), "excerpt": h["text"][:300]} for i, h in enumerate(state.get("sources", []))],
         "rag_status": state.get("rag_status", ""), "best_dense": state.get("best_dense", 0.0),
         "review": state.get("review", {}), "revisions": state.get("revisions", 0),
+        "served_by": state.get("served_by", ""),
         "answer_text": answer_text,
         "tables": tables,
         "answer": "\n\n".join([answer_text] + [to_markdown(t) for t in tables]),

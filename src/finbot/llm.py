@@ -17,6 +17,28 @@ def get_chat_model(settings: Settings | None = None):
     raise ValueError(f"Unknown FINBOT_BACKEND: {s.backend}")
 
 
+def _ollama(model: str, url: str, s: Settings):
+    from langchain_ollama import ChatOllama
+    return ChatOllama(model=model, base_url=url, reasoning=s.thinking, num_ctx=s.num_ctx, temperature=s.temperature,
+                      num_predict=s.max_output_tokens, keep_alive="60m")
+
+
+def get_runnables(tools: list, settings: Settings | None = None):
+    """(plain model, model with tools). With the GPU backend, each falls back to the local Ollama model on any error
+    (unreachable tunnel, timeout, server error), so the booth keeps working offline (SPEC section 2)."""
+    s = settings or get_settings()
+    if s.backend != "openai":
+        m = _ollama(s.model, s.base_url, s)
+        return m, m.bind_tools(tools)
+    from langchain_openai import ChatOpenAI
+    primary = ChatOpenAI(model=s.model, base_url=s.base_url, api_key="not-needed", temperature=s.temperature,
+                         max_tokens=s.max_output_tokens, timeout=s.request_timeout, max_retries=0,
+                         extra_body={"chat_template_kwargs": {"enable_thinking": s.thinking}})
+    fallback = _ollama(s.fallback_model, s.fallback_url, s)
+    return (primary.with_fallbacks([fallback]),
+            primary.bind_tools(tools).with_fallbacks([fallback.bind_tools(tools)]))
+
+
 def get_embedder(settings: Settings | None = None):
     s = settings or get_settings()
     from langchain_ollama import OllamaEmbeddings

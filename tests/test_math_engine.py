@@ -67,3 +67,20 @@ def test_solve_rejects(bad):
 def test_solve_rejects_bad_variable_name():
     with pytest.raises(ValueError):
         solve_equation("x = 2", "__x")
+
+
+def test_calculate_reports_intermediate_steps():
+    steps = calculate("245000*0.15*(1+0.18)")["result"]["steps"]
+    values = {x["step"]: x["value"] for x in steps}
+    assert values["245000*0.15"] == pytest.approx(36750) and values["1+0.18"] == pytest.approx(1.18)
+    assert values["245000*0.15*(1+0.18)"] == pytest.approx(43365)
+
+
+def test_gst_answer_with_intermediate_passes_review():
+    import json
+    from finbot.precheck import precheck
+    from finbot.review import review_answer
+    q = "What is 15% of ₹2,45,000, plus 18% GST on that amount?"
+    evidence = q + json.dumps(calculate("245000*0.15*(1+0.18)"))
+    r = review_answer("15% of ₹2,45,000 is ₹36,750; with 18% GST the total is ₹43,365.", precheck(q).flags, ["calculate"], 0, (), evidence)
+    assert r.passed, r.codes

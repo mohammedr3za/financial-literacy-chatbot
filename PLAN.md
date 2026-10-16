@@ -49,7 +49,7 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - [ ] `goal_saving`, `real_return`, `effective_annual_rate` tools (test-first)
 - [ ] Question-type router, routing enforcement, no-unsourced-figures check for calculations (test-first)
 - [ ] Follow-up chips and the goal example on the homepage
-- [ ] A100 + vLLM serving Qwen3.6-27B-FP8, SSH tunnel, automatic fallback to the Mac model
+- [x] ~~A100 serving~~ dropped: the user wants the GPU for fine-tuning only (M6). The backend switch with fallback stays for the teacher model.
 - [ ] Fresh held-out calculation set (different wording and numbers from the 30)
 - **Acceptance:**
   - `uv run pytest` passes.

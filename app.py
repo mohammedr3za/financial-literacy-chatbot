@@ -7,6 +7,7 @@ import streamlit as st
 
 from finbot.attachments import table_text
 from finbot.config import get_settings
+from finbot.followups import suggest
 from finbot.graph import FinBot
 from finbot.precheck import redact
 from finbot.tables import to_html
@@ -30,6 +31,11 @@ header[data-testid="stHeader"] { background: transparent; }
                           padding: .55rem 1.1rem; justify-content: flex-start; text-align: left; min-height: 0; }
 .st-key-examples button:hover { border-color: var(--fb-ink); color: var(--fb-ink); background: #fff; }
 .st-key-examples button p { font-size: 13px; text-align: left; }
+.st-key-followups { margin-top: .4rem; }
+.st-key-followups button { background: transparent; border: 1px solid var(--fb-line); color: #444; box-shadow: none; min-height: 0;
+                           padding: .3rem .85rem; }
+.st-key-followups button:hover { border-color: var(--fb-accent); color: var(--fb-accent); background: transparent; }
+.st-key-followups button p { font-size: 12.5px; }
 .st-key-examples button > div { justify-content: flex-start; width: 100%; }
 [data-testid="stChatMessageAvatarUser"], [data-testid="stChatMessageAvatarAssistant"] { display: none; }
 [data-testid="stChatMessage"] { background: transparent; padding: .3rem 0; gap: 0; }
@@ -80,11 +86,16 @@ REVIEW_LABELS = {"guarantee_language": "guarantee language", "no_tool_for_number
                  "no_adviser_referral": "no adviser referral", "fake_citation": "a citation to a missing source",
                  "unverified_regulatory": "an unverified rule", "unlisted_link": "an unofficial link",
                  "unsupported_figures": "a figure not in the sources", "empty": "an empty answer"}
-EXAMPLES = [
-    "EMI on ₹20 lakh at 8.5% for 20 years",
-    "₹10,000 a month in a SIP at 12% for 15 years",
-    "Confirm this stock will give me 30% returns",
-    "How are crypto gains taxed in India?",
+EXAMPLES = [  # (chip label, question sent)
+    ("EMI on ₹20 lakh at 8.5% for 20 years", "What EMI will I pay on a ₹20 lakh loan at 8.5% for 20 years?"),
+    ("Saving monthly for ₹1 crore in 15 years", "How much should I save each month to reach ₹1 crore in 15 years at 12%?"),
+    ("₹10,000 a month in a SIP at 12% for 15 years", "If I invest ₹10,000 a month in a SIP at 12% for 15 years, how much will I have?"),
+    ("Prepare a cash flow statement", "Prepare a cash flow statement using the indirect method. Net profit ₹80,000. Depreciation ₹15,000. "
+     "Debtors increased from ₹40,000 to ₹55,000. Stock decreased from ₹30,000 to ₹22,000. Creditors increased by ₹6,000. "
+     "Bought machinery for ₹60,000. Sold old furniture for ₹5,000. Took a bank loan of ₹25,000. Paid dividend ₹20,000. "
+     "Opening cash ₹12,000 and closing cash ₹56,000."),
+    ("Confirm this stock will give me 30% returns", "Confirm that this stock will give me 30% returns"),
+    ("How are crypto gains taxed in India?", "How are crypto gains taxed in India?"),
 ]
 
 
@@ -134,7 +145,9 @@ def render_details(t: dict) -> None:
                    else f"First draft had {fixed}; rewritten and passed." if rv.get("passed")
                    else "Still failing after a rewrite; a caution was added.")
         parts.append(f'<div class="fb-detail"><span class="k">Review</span>{esc(verdict)}</div>')
-        parts.append(f'<div class="fb-detail muted">{esc(SETTINGS.model)} · on this laptop · {t["latency_s"]} s</div>')
+        served = t.get("served_by") or SETTINGS.model
+        where = "on this laptop" if served == SETTINGS.fallback_model or SETTINGS.backend == "ollama" else "on the GPU server"
+        parts.append(f'<div class="fb-detail muted">{esc(served)} · {where} · {t["latency_s"]} s</div>')
         st.markdown("".join(parts), unsafe_allow_html=True)
 
 
@@ -156,30 +169,39 @@ used = sum(1 for m in st.session_state.history if m["role"] == "user")
 with st.sidebar:
     st.markdown('<div class="fb-eyebrow"><span class="fb-star">✳</span> Settings</div>', unsafe_allow_html=True)
     use_rag = st.toggle("Search books & guidelines", value=True, help="Switch off to compare an ungrounded answer.")
-    st.caption(f"{SETTINGS.model} · on this laptop · {used}/{SETTINGS.session_cap} questions")
+    where = "GPU server, laptop fallback" if SETTINGS.backend == "openai" else "on this laptop"
+    st.caption(f"{SETTINGS.model} · {where} · {used}/{SETTINGS.session_cap} questions")
     if st.button("New conversation", use_container_width=True):
         st.session_state.thread, st.session_state.history = uuid.uuid4().hex, []
         st.rerun()
 
 # ---------------------------------------------------------------- page
+prompt = None
 st.markdown('<div class="fb-eyebrow"><span class="fb-star">✳</span> FinBot &nbsp;·&nbsp; educational, not advice</div>',
             unsafe_allow_html=True)
-prompt, attach = None, None
+attach = None
 if not st.session_state.history:
     st.markdown('<h1 class="fb-hero">Ask about money.</h1>'
                 '<p class="fb-sub">Exact calculators. Official sources. Runs on this laptop.</p>', unsafe_allow_html=True)
     with st.container(key="examples"):
         cols = st.columns(2)
-        for i, ex in enumerate(EXAMPLES):
-            if cols[i % 2].button(ex, key=f"ex{i}", use_container_width=True):
-                prompt = ex
+        for i, (label, question) in enumerate(EXAMPLES):
+            if cols[i % 2].button(label, key=f"ex{i}", use_container_width=True):
+                prompt = question
 
-for m in st.session_state.history:
+for idx, m in enumerate(st.session_state.history):
     with st.chat_message(m["role"]):
         if m["role"] == "user":
             st.markdown(m["content"], unsafe_allow_html=True)  # already escaped when stored
         else:
             render_answer(m["trace"])
+            if idx == len(st.session_state.history) - 1:  # follow-up chips under the latest answer only
+                chips = suggest(m["trace"])
+                with st.container(key="followups"):
+                    cols = st.columns(len(chips))
+                    for j, chip in enumerate(chips):
+                        if cols[j].button(chip, key=f"fu{idx}_{j}", use_container_width=True):
+                            prompt = chip
 
 capped = used >= SETTINGS.session_cap
 submitted = st.chat_input("Session limit reached. Start a new conversation." if capped else "Ask, or attach a balance sheet…",

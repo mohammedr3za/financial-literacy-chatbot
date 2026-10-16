@@ -114,3 +114,14 @@ def test_working_capital_change_accepted_only_if_exact_difference_of_given_figur
     assert ungrounded_values({"current_asset_changes": {"Stock": -8000}}, q) == []
     assert ungrounded_values({"current_asset_changes": {"Stock": -7000}}, q) == ["current_asset_changes.Stock=-7000"]
     assert ungrounded_values({"total_liabilities": 1150}, q) == ["total_liabilities=1150"]  # a difference, but not a working-capital change
+
+
+def test_gpu_backend_falls_back_to_local_model_when_unreachable():
+    """Primary points at a closed port; the request must be answered by the fallback (a scripted local model)."""
+    from langchain_core.runnables import RunnableLambda
+    from langchain_openai import ChatOpenAI
+    from helpers import ScriptedModel
+    primary = ChatOpenAI(model="x", base_url="http://127.0.0.1:9/v1", api_key="k", timeout=2, max_retries=0)
+    local = ScriptedModel(responses=["Local answer."])
+    chain = primary.with_fallbacks([local])
+    assert chain.invoke("hi").content == "Local answer."

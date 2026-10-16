@@ -18,6 +18,9 @@ class Settings:
     num_ctx: int = field(default_factory=lambda: int(os.getenv("FINBOT_NUM_CTX", "16384")))
     temperature: float = field(default_factory=lambda: float(os.getenv("FINBOT_TEMPERATURE", "0.0")))
     max_output_tokens: int = field(default_factory=lambda: int(os.getenv("FINBOT_MAX_OUTPUT_TOKENS", "700")))
+    fallback_model: str = field(default_factory=lambda: os.getenv("FINBOT_FALLBACK_MODEL", "qwen3:8b"))
+    fallback_url: str = field(default_factory=lambda: os.getenv("FINBOT_FALLBACK_URL", "http://localhost:11434"))
+    request_timeout: float = field(default_factory=lambda: float(os.getenv("FINBOT_TIMEOUT", "180")))
     embed_model: str = field(default_factory=lambda: os.getenv("FINBOT_EMBED_MODEL", "bge-m3"))
     embed_url: str = field(default_factory=lambda: os.getenv("FINBOT_EMBED_URL", "http://localhost:11434"))
     kb_dir: Path = PROJECT_ROOT / "kb"
