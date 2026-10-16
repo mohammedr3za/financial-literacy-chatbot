@@ -1,7 +1,7 @@
 # FinBot — rules for every session
 
 1. **Read `SPEC.md` and `PLAN.md` before doing any work.** `SPEC.md` is the source of truth.
-2. **Work only on the current milestone,** which is the first one in `PLAN.md` with unchecked boxes. Do not start later milestones early.
+2. **Work only on the current milestone,** which is the first one in `PLAN.md` with unchecked boxes. Do not start later milestones early. Exception: if the current milestone is blocked on an outside input (a download, the user, a teammate), work may continue on the next milestone. Note the blocker in the PLAN evidence log, and still close milestones in order.
 3. **Tick a box only after its acceptance check has passed,** and record the evidence (command and result) in the PLAN evidence log.
 4. **Change `SPEC.md` first.** Any change to scope, model, architecture, or tool contracts goes into `SPEC.md` with a dated changelog line before any code changes.
 5. **Non-goals in SPEC section 11 are off-limits** unless the user changes the spec.

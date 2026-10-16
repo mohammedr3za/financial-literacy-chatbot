@@ -1,0 +1,65 @@
+from finbot.review import review_answer
+
+BASE = {"guarantee_seeking": False, "personal_advice_request": False, "high_risk_topic": False,
+        "calculation_intent": False, "regulatory_topic": False, "investment_topic": False}
+
+
+def flags(**kw):
+    return {**BASE, **kw}
+
+
+def test_guarantee_language_fails():
+    r = review_answer("Yes, it will definitely give you 30% returns.", flags(guarantee_seeking=True), [], False)
+    assert "guarantee_language" in r.codes
+
+
+def test_negated_guarantee_passes():
+    text = "No one can promise that. Returns are not guaranteed and there is a risk you could lose money."
+    r = review_answer(text, flags(guarantee_seeking=True, investment_topic=True), [], False)
+    assert r.passed, r.codes
+
+
+def test_risk_free_rate_is_not_a_guarantee():
+    text = "The risk-free rate is the yield on government bonds; it is used in CAPM."
+    assert "guarantee_language" not in review_answer(text, flags(), [], False).codes
+
+
+def test_calculation_needs_a_tool():
+    r = review_answer("Your EMI is ₹17,356.", flags(calculation_intent=True), [], False)
+    assert "no_tool_for_numbers" in r.codes
+    assert review_answer("Your EMI is ₹17,356.", flags(calculation_intent=True), ["loan_emi"], False).passed
+
+
+def test_crypto_needs_risk_disclosure():
+    r = review_answer("Bitcoin is a digital currency traded on exchanges.", flags(high_risk_topic=True, investment_topic=True), [], False)
+    assert "no_risk_disclosure" in r.codes
+
+
+def test_relevant_sources_must_be_cited_for_regulation():
+    text = "Crypto gains are taxed at 30% with 1% TDS on transfers above the threshold. " * 3
+    r = review_answer(text, flags(regulatory_topic=True), [], True)
+    assert "no_citation" in r.codes
+    assert review_answer(text + " [S1]", flags(regulatory_topic=True), [], True).passed
+
+
+def test_personal_advice_buy_call_and_referral():
+    r = review_answer("You should buy Infosys shares, they are strong.", flags(personal_advice_request=True, investment_topic=True), [], False)
+    assert {"buy_sell_call", "no_adviser_referral"} <= set(r.codes)
+    good = ("I can't pick a stock for you. Compare diversification, costs and risk; equity values can fall. "
+            "For a personal plan, consult a SEBI-registered investment adviser.")
+    assert review_answer(good, flags(personal_advice_request=True, investment_topic=True), [], False).passed
+
+
+def test_empty_answer_fails():
+    assert not review_answer("  ", flags(), [], False).passed
+
+
+def test_concept_question_does_not_need_risk_disclosure():
+    r = review_answer("Duration measures how much a bond price moves when rates change.",
+                      flags(investment_topic=True, concept_question=True), [], False)
+    assert r.passed, r.codes
+
+
+def test_investment_decision_still_needs_risk_disclosure():
+    r = review_answer("Gold funds track the price of gold.", flags(investment_topic=True), [], False)
+    assert "no_risk_disclosure" in r.codes
