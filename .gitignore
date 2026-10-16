@@ -15,3 +15,5 @@ train/data/
 train/out/
 *.gguf
 *.safetensors
+bench/sheets/
+bench/report/
