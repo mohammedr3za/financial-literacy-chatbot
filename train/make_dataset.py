@@ -35,21 +35,39 @@ Excerpt:
 
 
 def calc_templates(rng: random.Random):
-    """Programmatic calculation questions with the tool call we expect."""
+    """Programmatic calculation questions with the tool call we expect (varied, persona-flavoured wording)."""
     lakh = rng.choice([5, 8, 10, 15, 20, 25, 30, 40, 50, 75])
     rate = rng.choice([7.5, 8, 8.25, 8.5, 8.75, 9, 9.5, 10.5, 11, 12, 14])
-    yrs = rng.choice([3, 5, 7, 10, 15, 20, 25])
+    yrs = rng.choice([3, 5, 7, 10, 12, 15, 20, 25])
     sip = rng.choice([1000, 2000, 2500, 5000, 7500, 10000, 15000, 25000])
     ret = rng.choice([8, 10, 11, 12, 14, 15])
+    infl = rng.choice([4, 5, 5.5, 6, 7])
+    price = rng.choice([1200, 4999, 18500, 45000, 62000, 125000])
+    gst = rng.choice([5, 12, 18, 28])
+    m, freq = rng.choice([(12, "monthly"), (4, "quarterly"), (2, "half-yearly")])
+    goal_q = rng.choice([f"How much should I invest every month to reach ₹{lakh} lakh in {yrs} years at {ret}% a year?",
+                         f"I want ₹{lakh} lakh in {yrs} years. If I earn {ret}% a year, what monthly SIP do I need?",
+                         f"What monthly saving gets me to ₹{lakh} lakh in {yrs} years, assuming {ret}% returns?"])
     return rng.choice([
-        (f"What EMI will I pay on a ₹{lakh} lakh loan at {rate}% for {yrs} years?", "loan_emi",
-         {"principal": lakh * 1e5, "annual_rate_pct": rate, "months": yrs * 12}),
-        (f"If I invest ₹{sip:,} every month at {ret}% a year for {yrs} years, how much will I have?", "sip_future_value",
-         {"monthly": sip, "annual_return_pct": ret, "years": yrs}),
+        (rng.choice([f"What EMI will I pay on a ₹{lakh} lakh loan at {rate}% for {yrs} years?",
+                     f"My loan is ₹{lakh} lakh for {yrs} years at {rate}%. What's the monthly EMI?"]),
+         "loan_emi", {"principal": lakh * 1e5, "annual_rate_pct": rate, "months": yrs * 12}),
+        (rng.choice([f"If I invest ₹{sip:,} every month at {ret}% a year for {yrs} years, how much will I have?",
+                     f"I put ₹{sip:,} a month in a SIP. At {ret}% for {yrs} years, what does it grow to?"]),
+         "sip_future_value", {"monthly": sip, "annual_return_pct": ret, "years": yrs}),
+        (goal_q, "goal_saving", {"target": lakh * 1e5, "years": yrs, "annual_return_pct": ret}),
         (f"I need ₹{lakh} lakh in {yrs} years. How much should I invest today at {rate}% a year?", "tvm",
          {"solve_for": "pv", "annual_rate_pct": rate, "years": yrs, "fv": lakh * 1e5}),
         (f"My investment grew from ₹{sip:,} to ₹{sip * rng.choice([2, 3, 4]):,} in {yrs} years. What is the CAGR?", "tvm",
          {"solve_for": "annual_rate_pct", "years": yrs}),
+        (rng.choice([f"How many years will my money take to double at {rate}% a year?", f"At {rate}% a year, when will my money double?"]),
+         "tvm", {"solve_for": "years", "annual_rate_pct": rate}),
+        (f"My {rng.choice(['FD', 'savings bond', 'debt fund'])} gives {rate}% and inflation is {infl}%. What is my real return?",
+         "real_return", {"nominal_pct": rate, "inflation_pct": infl}),
+        (f"What is the effective annual rate of {rate}% compounded {freq}?", "effective_annual_rate",
+         {"nominal_pct": rate, "periods_per_year": m}),
+        (f"A {rng.choice(['phone', 'laptop', 'scooter', 'fridge'])} costs ₹{price:,} before tax. With {gst}% GST, what is the final price?",
+         "calculate", {}),
     ])
 
 
@@ -61,8 +79,9 @@ def similar_to_benchmark(q: str, bench: list[str], threshold: float = 0.85) -> b
 def benchmark_questions() -> list[str]:
     qs = yaml.safe_load((ROOT / "bench/questions.yaml").read_text())
     calc = yaml.safe_load((ROOT / "bench/calc_problems.yaml").read_text())
+    held = yaml.safe_load((ROOT / "bench/heldout_problems.yaml").read_text())
     out = [t for item in qs["questions"] for p in item["variants"].values() for t in p.values()]
-    return [x.lower() for x in out + [p["question"] for p in calc["problems"]]]
+    return [x.lower() for x in out + [p["question"] for p in calc["problems"] + held["problems"]]]
 
 
 def to_record(state: dict) -> dict:
@@ -88,71 +107,91 @@ def to_record(state: dict) -> dict:
 
 
 def main() -> int:
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from langchain_core.utils.function_calling import convert_to_openai_tool
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n-kb", type=int, default=1000, help="questions generated from knowledge-base chunks")
-    ap.add_argument("--n-calc", type=int, default=500, help="programmatic calculation questions")
+    ap.add_argument("--n-kb", type=int, default=600, help="questions generated from knowledge-base chunks")
+    ap.add_argument("--n-calc", type=int, default=300, help="programmatic calculation questions")
+    ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--out", default=str(ROOT / "train/data/sft.jsonl"))
     ap.add_argument("--seed", type=int, default=7)
     a = ap.parse_args()
     from finbot.graph import FinBot
-    from finbot.llm import get_chat_model
+    from finbot.llm import get_runnables
     from finbot.tools.registry import CALC_TOOLS
     rng = random.Random(a.seed)
-    teacher = get_chat_model()
-    bot = FinBot(model=teacher)
+    teacher, _ = get_runnables(CALC_TOOLS)
     bench = benchmark_questions()
     chunks = [json.loads(line) for line in (ROOT / "kb/index/chunks.jsonl").read_text().splitlines()]
     guide = [c for c in chunks if c["kind"] == "guidelines"]
     books = [c for c in chunks if c["kind"] == "books"]
+    picks = [(rng.choice(guide if rng.random() < 0.6 else books), rng.choice(PERSONAS), rng.choice(FRAMINGS)) for _ in range(a.n_kb // 2 + 20)]
 
-    jobs = []
-    while len(jobs) < a.n_kb:  # guidelines are oversampled: they are what the model knows least
-        c = rng.choice(guide if rng.random() < 0.6 else books)
-        persona, framing = rng.choice(PERSONAS), rng.choice(FRAMINGS)
-        reply = teacher.invoke(QGEN_PROMPT.format(title=c["title"], n=2, persona=persona, framing=framing, text=c["text"]))
+    def make_questions(pick):
+        c, persona, framing = pick
         try:
+            reply = teacher.invoke(QGEN_PROMPT.format(title=c["title"], n=2, persona=persona, framing=framing, text=c["text"]))
             qs = json.loads(re.search(r"\[.*\]", reply.content, re.S).group(0))
-        except (AttributeError, ValueError):
-            continue
-        jobs += [("kb", q, None) for q in qs if isinstance(q, str)]
-    jobs = jobs[: a.n_kb]
+            return [q for q in qs if isinstance(q, str) and 8 < len(q) < 400]
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(a.workers) as pool:
+        kb_qs = [q for qs in pool.map(make_questions, picks) for q in qs][: a.n_kb]
+    jobs = [("kb", q, None) for q in kb_qs]
     for _ in range(a.n_calc):
         question, tool_name, args = calc_templates(rng)  # one draw, so question and expected call always match
         jobs.append(("calc", question, (tool_name, args)))
+    print(f"{len(jobs)} questions ({len(kb_qs)} from documents, {a.n_calc} calculations)", flush=True)
 
+    local = threading.local()
+    lock = threading.Lock()
+    tool_schemas = [convert_to_openai_tool(t) for t in CALC_TOOLS]
+    counts = {"kept": 0, "dup": 0, "review": 0, "tool": 0, "error": 0, "done": 0}
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    kept = dropped_dup = dropped_review = dropped_tool = 0
-    tool_schemas = [t.tool_call_schema.model_json_schema() | {"name": t.name, "description": t.description} for t in CALC_TOOLS]
-    with out.open("w", encoding="utf-8") as f:
-        for i, job in enumerate(jobs, 1):
-            question = job[1]
-            if similar_to_benchmark(question, bench):
-                dropped_dup += 1
-                continue
-            cfg = {"configurable": {"thread_id": f"gen-{i}", "use_rag": True}, "recursion_limit": 40}
-            state = bot.graph.invoke({"user_input": question}, cfg)
-            if not state.get("review", {}).get("passed") or state.get("revisions", 0):
-                dropped_review += 1
-                continue
-            if job[0] == "calc":
-                want_tool, want_args = job[2]
-                calls = [tc for m in state["messages"][state["question_idx"] + 1:] if isinstance(m, AIMessage)
-                         for tc in (m.tool_calls or [])]
-                if not calls or calls[0]["name"] != want_tool or any(
-                        abs(float(calls[0]["args"].get(k, -1)) - float(v)) > 1e-6
-                        for k, v in want_args.items() if isinstance(v, (int, float))):
-                    dropped_tool += 1
-                    continue
-            rec = to_record(state)
-            if rec:
-                rec["tools"] = tool_schemas
-                rec["source"] = job[0]
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                kept += 1
-            if i % 25 == 0:
-                print(f"{i}/{len(jobs)} kept={kept} dup={dropped_dup} review={dropped_review} tool={dropped_tool}", flush=True)
-    print(f"done: kept={kept} dropped: benchmark-like={dropped_dup}, failed review={dropped_review}, wrong tool={dropped_tool} -> {out}")
+    f = out.open("w", encoding="utf-8")
+
+    def run(item):
+        i, job = item
+        question = job[1]
+        if similar_to_benchmark(question, bench):
+            return "dup", None
+        if not hasattr(local, "bot"):
+            local.bot = FinBot(model=None)
+        try:
+            state = local.bot.graph.invoke({"user_input": question},
+                                           {"configurable": {"thread_id": f"gen-{i}", "use_rag": True}, "recursion_limit": 40})
+        except Exception:
+            return "error", None
+        if not state.get("review", {}).get("passed") or state.get("revisions", 0):
+            return "review", None
+        if job[0] == "calc":
+            want_tool, want_args = job[2]
+            calls = [tc for m in state["messages"][state["question_idx"] + 1:] if isinstance(m, AIMessage) for tc in (m.tool_calls or [])]
+            if not calls or calls[0]["name"] != want_tool or any(
+                    abs(float(calls[0]["args"].get(k, -1)) - float(v)) > 1e-6 for k, v in want_args.items() if isinstance(v, (int, float))):
+                return "tool", None
+        rec = to_record(state)
+        if not rec:
+            return "review", None
+        rec["tools"] = tool_schemas
+        rec["source"] = job[0]
+        return "kept", rec
+
+    with ThreadPoolExecutor(a.workers) as pool:
+        for status, rec in pool.map(run, enumerate(jobs)):
+            with lock:
+                counts[status] += 1
+                counts["done"] += 1
+                if rec:
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    f.flush()
+                if counts["done"] % 25 == 0:
+                    print(f"{counts['done']}/{len(jobs)} {counts}", flush=True)
+    f.close()
+    print(f"done: {counts} -> {out}", flush=True)
     return 0
 
 

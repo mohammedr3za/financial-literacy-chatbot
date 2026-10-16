@@ -22,6 +22,6 @@ def calc_correct(answer: str, question: str, expected: float, tol_pct: float = 0
     for v in extract_numbers(answer):
         if any(close(v, q) for q in from_question) and not close(v, expected):
             continue
-        if close(v, expected):
+        if close(v, expected) or close(v, abs(expected)):  # sign is usually given in words ("a negative real return of 1.90%")
             return True, v
     return False, None

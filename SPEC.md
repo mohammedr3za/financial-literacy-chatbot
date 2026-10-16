@@ -169,10 +169,12 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
 - `make_score_sheet.py` builds a blind, shuffled sheet with the 6 criteria scored 0–2. It marks 25% of rows for double scoring.
 - `report.py` produces tables by bot, persona, and framing, charts, and the inter-rater agreement.
 - Scoring is done by humans (members 1 and 2). There is no LLM judge.
+- **Private course set:** the McGraw Connect practice problems (34 problems, 6 assignments, in `/Users/reza/MS3610/mcgraw/dataset`, transcribed by the user) are a **test set only**. `bench/run_external.py` grades each answer part by code at 0.5% and 1%. The problems stay outside this repo and are never committed, published, or used as training data: McGraw Hill's terms forbid using their content to train AI, and training on a test set would invalidate it.
+- **Held-out set:** `bench/heldout_problems.yaml` (20 problems written after the 27/30 baseline) judges the reliability fixes and the fine-tune.
 
 ## 9. Fine-tune (optional, Sunday, rented GPU)
 - **Teacher:** `Qwen3.6-35B-A3B` (Apache-2.0) served by vLLM with `--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3`.
-- **Data:** About 1,500 questions are generated from KB chunks across the personas and framings. Each one is run through **this graph** with the teacher as the model. A transcript is kept only if it passes review and its numeric checks. Questions with cosine similarity above 0.85 to any benchmark question are removed.
+- **Data:** About 900 questions (600 from KB chunks across personas and framings, 300 from calculation templates) are generated. Each one is run through **this graph** with the teacher as the model. A transcript is kept only if it passes review and its numeric checks. Questions similar to any benchmark, held-out or McGraw question (string similarity ≥ 0.85) are removed.
 - **Training:** An Unsloth LoRA on `Qwen/Qwen3-8B`, the same base as the shipped model (bf16 LoRA, r=16, 2 epochs, max sequence 4096), exported to GGUF Q4_K_M, then `ollama create finbot-8b` using the base model's Ollama template.
 - **Ship rule:** The fine-tuned model replaces the base only if it matches or beats it on calculation accuracy and the rubric sample. Both results are recorded either way.
 
@@ -206,3 +208,4 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
 - 2026-10-16: User requirement: no calculation mistakes. The baseline 27/30 run had "save ₹10 lakh a month for ₹1 crore" (wrong tool), Rule-of-72 mental arithmetic and a GST misread. Added section 4.0 (dedicated goal, real-return and effective-rate tools; deterministic router; routing enforcement; no unsourced figures in calculations) and follow-up chips. The primary model moves to Qwen3.6-27B-FP8 on a Lambda A100 (user approved); qwen3:8b on the Mac becomes the fallback.
 - 2026-10-16: Correction from the user: the Lambda GPU is **only for fine-tuning**, not for serving. Serving stays on the Mac (`qwen3:8b`). The OpenAI-compatible backend with fallback stays in the code for the fine-tune teacher.
 - 2026-10-16: The user wants FinBot both locally and on the GPU (more accurate and faster), plus a public Vercel frontend. Restored GPU serving as an option for the Mac app (with local fallback), and added section 7.2. The GPU is shared with fine-tuning: training pauses serving for about an hour.
+- 2026-10-16: Added the private McGraw course set (34 problems) as a test-only evaluation, and the 20-problem held-out set. Fine-tune data is about 900 teacher transcripts from Qwen3.6-27B on the A100.

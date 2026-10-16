@@ -1,0 +1,103 @@
+about: Held-out set written after the 27/30 baseline, to judge fixes and the fine-tune fairly. Never use for training.
+tolerance_pct: 0.5
+problems:
+- id: h01
+  topic: goal
+  question: I want ₹50 lakh for my daughter's education in 12 years. How much should I invest every month if I can earn 11% a year?
+  expected: 16691.4247
+  unit: INR
+- id: h02
+  topic: years
+  question: At 8% a year, how long will it take for my money to triple?
+  expected: 14.2749
+  unit: YEARS
+- id: h03
+  topic: real
+  question: My savings account pays 3.5% and inflation is 5.5%. What is my real return?
+  expected: 1.8957
+  unit: PCT
+- id: h04
+  topic: ear
+  question: A bank offers 7.5% compounded quarterly. What is the effective annual yield?
+  expected: 7.7136
+  unit: PCT
+- id: h05
+  topic: emi
+  question: I want to buy a car worth ₹8 lakh with a 5-year loan at 9.75%. What's my monthly EMI?
+  expected: 16899.3949
+  unit: INR
+- id: h06
+  topic: emi
+  question: How much interest will I pay in total on a ₹35 lakh home loan at 8.9% for 25 years?
+  expected: 5239771.0847
+  unit: INR
+- id: h07
+  topic: sip
+  question: If I invest ₹7,500 every month for 12 years and earn 11% a year, what will it grow to?
+  expected: 2246662.6243
+  unit: INR
+- id: h08
+  topic: sip
+  question: I start a ₹5,000 monthly SIP and raise it by 10% every year. At 12% a year for 20 years, how much will I have?
+  expected: 9944357.743
+  unit: INR
+- id: h09
+  topic: fv
+  question: I put ₹2 lakh in an FD at 7.1% compounded quarterly for 5 years. What will I get at maturity?
+  expected: 284349.3349
+  unit: INR
+- id: h10
+  topic: pv
+  question: I need ₹25 lakh in 8 years for a house down payment. How much should I invest today at 9% a year?
+  expected: 1254665.6992
+  unit: INR
+- id: h11
+  topic: cagr
+  question: A fund's NAV went from ₹42 to ₹118 in 7 years. What is its CAGR?
+  expected: 15.9019
+  unit: PCT
+- id: h12
+  topic: npv
+  question: A machine costs ₹5,00,000 and saves ₹1,40,000 a year for 5 years. At a 10% discount rate, what is the NPV?
+  expected: 30710.1477
+  unit: INR
+- id: h13
+  topic: irr
+  question: I invest ₹1,00,000 and get back ₹25,000, ₹35,000, ₹45,000 and ₹30,000 over the next four years. What's the IRR?
+  expected: 12.5959
+  unit: PCT
+- id: h14
+  topic: bond
+  question: What is the price of a ₹1,000 bond with a 9% annual coupon maturing in 6 years if similar bonds yield 10%?
+  expected: 956.4474
+  unit: PRICE
+- id: h15
+  topic: bond
+  question: A 10-year ₹1,000 bond pays 8% coupons twice a year. If market yields are 7%, what's its price?
+  expected: 1071.062
+  unit: PRICE
+- id: h16
+  topic: option
+  question: Using Black-Scholes, what is a 3-month call worth if the stock is at ₹500, the strike is ₹520, the risk-free rate is 6.5% and volatility is 30%?
+  expected: 24.784
+  unit: PRICE
+- id: h17
+  topic: percent
+  question: A laptop costs ₹62,000 before tax. With 18% GST, what's the final price?
+  expected: 73160.0
+  unit: INR
+- id: h18
+  topic: percent
+  question: A ₹4,000 jacket has a 25% discount, and then 12% GST is charged on the discounted price. How much do I pay?
+  expected: 3360.0
+  unit: INR
+- id: h19
+  topic: goal
+  question: I have ₹3 lakh saved and want ₹40 lakh in 10 years. At 10% a year, how much must I add each month?
+  expected: 15433.8241
+  unit: INR
+- id: h20
+  topic: ratio
+  question: A company has current assets of ₹450 crore and current liabilities of ₹300 crore. What is its current ratio?
+  expected: 1.5
+  unit: X

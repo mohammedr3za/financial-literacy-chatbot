@@ -54,7 +54,8 @@ HINTS = {
     "sip_fv": "The monthly amount is known: call sip_future_value(monthly=..., annual_return_pct=..., years=...).",
     "lump_fv": "Lump-sum growth: call tvm(solve_for='fv', annual_rate_pct=..., years=..., pv=<amount invested>, periods_per_year as stated).",
     "percent": ("Use calculate. Apply each percentage to the right base: 'X% of A, plus Y% GST on that amount' means A × X/100 × (1 + Y/100). "
-                "Write the whole expression in one call."),
+                "Write the whole expression in one call. If you also show an intermediate amount (such as the GST amount alone), compute it with "
+                "calculate too; never work out a figure yourself."),
     "statement": "Use financial_ratios, balance_sheet_check or cash_flow_statement with the figures exactly as given.",
 }
 

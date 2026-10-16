@@ -103,13 +103,14 @@ P = [
     ("c30", "percent", "What is the effective annual rate of 12% a year compounded monthly?", ((1 + 0.01) ** 12 - 1) * 100, "PCT"),
 ]
 
-out = {
-    "about": "30 calculation problems. Expected answers come from standalone formulas in scripts/make_calc_answers.py, "
-             "not from FinBot's tools. Team: spot-check at least 5 in a spreadsheet and record who checked them.",
-    "tolerance_pct": 0.5,
-    "spot_checked_by": [],
-    "problems": [{"id": i, "topic": t, "question": q, "expected": round(v, 4), "unit": u} for i, t, q, v, u in P],
-}
-Path("bench/calc_problems.yaml").write_text(yaml.safe_dump(out, sort_keys=False, allow_unicode=True, width=140))
-for i, t, q, v, u in P:
-    print(f"{i} {t:7s} {v:>16,.4f} {u}")
+if __name__ == "__main__":
+    out = {
+        "about": "30 calculation problems. Expected answers come from standalone formulas in scripts/make_calc_answers.py, "
+                 "not from FinBot's tools. Team: spot-check at least 5 in a spreadsheet and record who checked them.",
+        "tolerance_pct": 0.5,
+        "spot_checked_by": [],
+        "problems": [{"id": i, "topic": t, "question": q, "expected": round(v, 4), "unit": u} for i, t, q, v, u in P],
+    }
+    Path("bench/calc_problems.yaml").write_text(yaml.safe_dump(out, sort_keys=False, allow_unicode=True, width=140))
+    for i, t, q, v, u in P:
+        print(f"{i} {t:7s} {v:>16,.4f} {u}")

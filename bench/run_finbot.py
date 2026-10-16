@@ -29,8 +29,8 @@ def prompts(which: str):
                 for framing, text in framings.items():
                     yield {"id": f"{item['id']}:{persona}:{framing}", "kind": "question", "question_id": item["id"],
                            "persona": persona, "framing": framing, "question": text, "qset_version": q["version"]}
-    if which in ("calc", "all"):
-        c = yaml.safe_load((ROOT / "bench/calc_problems.yaml").read_text())
+    if which in ("calc", "all", "heldout"):
+        c = yaml.safe_load((ROOT / ("bench/heldout_problems.yaml" if which == "heldout" else "bench/calc_problems.yaml")).read_text())
         for p in c["problems"]:
             yield {"id": p["id"], "kind": "calc", "question_id": p["id"], "persona": None, "framing": None,
                    "question": p["question"], "expected": p["expected"], "unit": p["unit"], "tolerance_pct": c["tolerance_pct"]}
@@ -39,7 +39,7 @@ def prompts(which: str):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", choices=["base", "rag", "rag_ft"], required=True)
-    ap.add_argument("--set", choices=["questions", "calc", "all"], default="all")
+    ap.add_argument("--set", choices=["questions", "calc", "all", "heldout"], default="all")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--out")
     a = ap.parse_args()
