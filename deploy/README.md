@@ -25,3 +25,10 @@ Download the "Report a problem" submissions first; they live on the instance and
 mkdir -p results/reports && scp ubuntu@<ip>:~/finbot/results/reports/reports.jsonl results/reports/gpu-$(date +%Y%m%d-%H%M).jsonl
 uv run python scripts/show_reports.py --path results/reports/gpu-<timestamp>.jsonl
 ```
+
+## Second site: the local 8B (finbot-local.vercel.app)
+The Vercel project `finbot-local` is a copy of `web/` pointed at the Mac (qwen3:8b), so the team can compare it with the 27B on finbot-blond.
+- Backend: run the API on the Mac on port 8080 and open a quick tunnel: `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080`.
+- Point the project at the tunnel. Do this from a copy of `web/` linked with `npx vercel link --yes --project finbot-local`, and delete the `.env.local` that the link writes:
+  `printf '%s' "<tunnel url>" | npx vercel env add FINBOT_BACKEND_URL production --force && npx vercel deploy --prod --yes`
+- Its conversations are logged to `results/chatlog-local/` (set `FINBOT_CHATLOG_DIR`).
