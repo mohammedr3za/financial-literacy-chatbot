@@ -1,11 +1,11 @@
 // FinBot public page: talks only to /api/* on this site (Vercel adds the secret token server-side).
 const EXAMPLES = [
-  ["EMI on ₹20 lakh at 8.5% for 20 years", "What EMI will I pay on a ₹20 lakh loan at 8.5% for 20 years?"],
-  ["Saving monthly for ₹1 crore in 15 years", "How much should I save each month to reach ₹1 crore in 15 years at 12%?"],
-  ["₹10,000 a month in a SIP at 12% for 15 years", "If I invest ₹10,000 a month in a SIP at 12% for 15 years, how much will I have?"],
-  ["Prepare a cash flow statement", "Prepare a cash flow statement using the indirect method. Net profit ₹80,000. Depreciation ₹15,000. Debtors increased from ₹40,000 to ₹55,000. Stock decreased from ₹30,000 to ₹22,000. Creditors increased by ₹6,000. Bought machinery for ₹60,000. Sold old furniture for ₹5,000. Took a bank loan of ₹25,000. Paid dividend ₹20,000. Opening cash ₹12,000 and closing cash ₹56,000."],
-  ["Confirm this stock will give me 30% returns", "Confirm that this stock will give me 30% returns"],
-  ["How are crypto gains taxed in India?", "How are crypto gains taxed in India?"],
+  ["My home loan is ₹20 lakh for 20 years at 8.5%. What will my EMI be?", "My home loan is ₹20 lakh for 20 years at 8.5%. What will my EMI be?"],
+  ["How much should I save monthly to get ₹1 crore in 15 years?", "How much should I save monthly to get ₹1 crore in 15 years if my investments earn about 12% a year?"],
+  ["If I put ₹10,000 a month in a SIP for 15 years, how much will I have?", "If I put ₹10,000 a month in a SIP for 15 years at 12% a year, how much will I have?"],
+  ["Can you prepare a cash flow statement from my numbers?", "Prepare a cash flow statement using the indirect method. Net profit ₹80,000. Depreciation ₹15,000. Debtors increased from ₹40,000 to ₹55,000. Stock decreased from ₹30,000 to ₹22,000. Creditors increased by ₹6,000. Bought machinery for ₹60,000. Sold old furniture for ₹5,000. Took a bank loan of ₹25,000. Paid dividend ₹20,000. Opening cash ₹12,000 and closing cash ₹56,000."],
+  ["My friend says this stock will surely give 30% returns. Is that true?", "My friend says this stock will surely give 30% returns. Is that true?"],
+  ["I made a profit on crypto this year. How much tax will I pay?", "I made a profit on crypto this year. How much tax will I pay in India?"],
 ];
 const FLAGS = { guarantee_seeking: "asks for a guarantee", personal_advice_request: "asks what to buy", high_risk_topic: "high-risk topic",
   calculation_intent: "calculation", regulatory_topic: "Indian rules or tax", statement_data: "financial statement" };

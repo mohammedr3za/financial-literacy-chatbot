@@ -133,3 +133,8 @@ def test_followup_without_tool_is_rejected_in_graph():
     fb.ask("How much should I save each month to reach ₹1 crore in 15 years at 12%?", thread_id="fu")
     t = fb.ask("What if I already have ₹5 lakh saved?", thread_id="fu")
     assert t["revisions"] == 1 and t["tools"][-1]["args"]["current_savings"] == 500000
+
+
+def test_sip_question_is_not_also_lump_sum():
+    t = precheck("If I put ₹10,000 a month in a SIP for 15 years at 12% a year, how much will I have?").flags["calc_types"]
+    assert t == ["sip_fv"]

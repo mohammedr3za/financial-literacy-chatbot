@@ -27,7 +27,7 @@ ROUTES = [  # (type, test) in priority order
     ("percent", lambda q: bool(re.search(r"\bgst\b|\d+(\.\d+)?\s*%\s*of\b|\bper ?cent of\b|\bpercentage of\b|\bdiscount of\b|\bmarkup\b", q, I))),
 ]
 EXCLUSIVE = {"goal_saving": {"sip_fv", "lump_fv", "present_value"}, "present_value": {"lump_fv"}, "years": {"lump_fv"},
-             "emi": {"sip_fv"}, "cagr": {"lump_fv"}}
+             "emi": {"sip_fv"}, "cagr": {"lump_fv"}, "sip_fv": {"lump_fv"}}
 
 REQUIRED_TOOLS = {
     "goal_saving": {"goal_saving"}, "present_value": {"tvm", "goal_saving"}, "years": {"tvm"},
