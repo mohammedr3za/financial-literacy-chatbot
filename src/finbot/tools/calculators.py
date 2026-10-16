@@ -4,7 +4,7 @@ No eval/exec anywhere.
 """
 import math
 
-from .fmt import format_inr, group, inr_words, make_table
+from .fmt import format_inr, group, inr_words, make_table, symbol
 
 
 def _out(inputs: dict, formula: str, result: dict, money_keys=()) -> dict:
@@ -57,7 +57,7 @@ def loan_emi(principal: float, annual_rate_pct: float, months: int) -> dict:
             paid, interest_y, prin_y, b = paid + emi, interest_y + i_amt, prin_y + emi - i_amt, b - (emi - i_amt)
         t_paid, t_int, t_prin = t_paid + paid, t_int + interest_y, t_prin + prin_y
         body.append([str(year), group(opening), group(paid), group(interest_y), group(prin_y), group(b if abs(b) >= 0.5 else 0)])
-    table = make_table("Year-wise loan schedule (₹)", ["Year", "Opening balance", "EMI paid", "Interest", "Principal", "Closing balance"],
+    table = make_table(f"Year-wise loan schedule ({symbol()})", ["Year", "Opening balance", "EMI paid", "Interest", "Principal", "Closing balance"],
                        body, total=["Total", "", group(t_paid), group(t_int), group(t_prin), ""])
     out = _out(
         {"principal": principal, "annual_rate_pct": annual_rate_pct, "months": months},
@@ -88,7 +88,7 @@ def sip_future_value(monthly: float, annual_return_pct: float, years: float, ste
         if (m + 1) % 12 == 0 or m == n - 1:
             body.append([str((m // 12) + 1), group(pay), group(year_inv), group(invested), group(bal), group(bal - invested)])
             year_inv = 0.0
-    table = make_table("Year-wise SIP growth (₹)", ["Year", "Monthly SIP", "Invested in year", "Total invested",
+    table = make_table(f"Year-wise SIP growth ({symbol()})", ["Year", "Monthly SIP", "Invested in year", "Total invested",
                                                     "Value at year end", "Gain"], body,
                        note="Assumes the stated return every year; actual returns vary and are not guaranteed.")
     out = _out(
@@ -129,7 +129,7 @@ def _tvm_table(rate_pct: float, years: float, pv: float, pmt: float, m: int, due
             growth = b - opening - dep_y
             body.append([str(k // m + 1), group(opening, 2), group(dep_y, 2), group(growth, 2), group(b, 2)])
             t_dep, t_growth, opening, dep_y = t_dep + dep_y, t_growth + growth, b, 0.0
-    return make_table("Year-wise growth (₹)", ["Year", "Opening", "Deposits", "Growth", "Closing"], body,
+    return make_table(f"Year-wise growth ({symbol()})", ["Year", "Opening", "Deposits", "Growth", "Closing"], body,
                       total=["Total", group(pv, 2), group(t_dep, 2), group(t_growth, 2), group(b, 2)])
 
 
@@ -240,7 +240,7 @@ def npv_irr(cashflows: list[float], discount_rate_pct: float | None = None) -> d
         body.append([str(t), group(c, 2), group(cum, 2), f"{df:.4f}", group(c * df, 2), group(cum_pv, 2)])
     label = (f"discounted at {discount_rate_pct}%" if discount_rate_pct is not None
              else f"discounted at the IRR, {result['irr_pct']}%" if result["irr_pct"] is not None else "undiscounted")
-    out["table"] = make_table(f"Cash flows by year (₹, {label})",
+    out["table"] = make_table(f"Cash flows by year ({symbol()}, {label})",
                               ["Year", "Cash flow", "Cumulative cash flow", "Discount factor", "Present value", "Cumulative PV"], body)
     return out
 
@@ -374,7 +374,7 @@ def goal_saving(target: float, years: float, annual_return_pct: float, current_s
     lump_today = target / (1 + i) ** n
     body = [[str(y), group(p), group(iy), group(it), group(v + current_savings * (1 + i) ** (y * 12 if y * 12 <= n else n)),
              group(v + current_savings * (1 + i) ** min(y * 12, n) - it - current_savings)] for y, p, iy, it, v in rows]
-    table = make_table("Year-wise plan to reach the goal (₹)", ["Year", "Monthly SIP", "Invested in year", "Total invested",
+    table = make_table(f"Year-wise plan to reach the goal ({symbol()})", ["Year", "Monthly SIP", "Invested in year", "Total invested",
                                                                 "Value at year end", "Gain"], body,
                        note="Assumes the stated return every year; actual returns vary and are not guaranteed.")
     out = _out(

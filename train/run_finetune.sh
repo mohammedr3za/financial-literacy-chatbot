@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 SSH="ssh -o BatchMode=yes -o ServerAliveInterval=30 ubuntu@$IP"
 uv run python train/filter_dataset.py train/data/sft.jsonl train/data/sft_clean.jsonl --external /Users/reza/MS3610/mcgraw/dataset/problems.jsonl
 rsync -az train/finetune.py train/data/sft_clean.jsonl "ubuntu@$IP:~/finbot-train/"
-$SSH 'pkill -f "vllm serve" || true; sleep 8; nvidia-smi --query-gpu=memory.used --format=csv,noheader'
+$SSH 'pkill -f "[v]llm serve" || true; sleep 8; nvidia-smi --query-gpu=memory.used --format=csv,noheader'
 $SSH 'cd ~/finbot-train && export LD_LIBRARY_PATH=/usr/local/cuda-13.0/compat:$LD_LIBRARY_PATH HF_HUB_ENABLE_HF_TRANSFER=1 && \
       ~/train-env/bin/python finetune.py --base Qwen/Qwen3-8B --data sft_clean.jsonl --out out --epochs 2 --max-seq 4096 2>&1 | tee train.log | \
       grep -E --line-buffered "loss|eval|Saved|Error|Traceback|train=" '

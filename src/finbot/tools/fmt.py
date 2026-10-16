@@ -1,12 +1,26 @@
-"""Indian-rupee formatting: lakh/crore digit grouping."""
+"""Money formatting. Default: Indian rupees with lakh/crore grouping. For questions in US dollars the graph switches
+the style to "USD": $ sign and Western 3-digit grouping (SPEC 4.2)."""
+import contextvars
 import re
+
+MONEY_STYLE: contextvars.ContextVar[str] = contextvars.ContextVar("money_style", default="INR")
+
+
+def symbol() -> str:
+    return "$" if MONEY_STYLE.get() == "USD" else "₹"
+
+
+def _western(whole: str) -> str:
+    return f"{int(whole):,}"
 
 
 def format_inr(value: float, decimals: int = 2) -> str:
-    """Format a number as rupees with Indian grouping, e.g. 2323390.76 -> '₹23,23,390.76'."""
+    """Format money: '₹23,23,390.76' (Indian grouping) by default, '$2,323,390.76' in USD style."""
     sign = "-" if value < 0 else ""
     text = f"{abs(value):.{decimals}f}"
     whole, _, frac = text.partition(".")
+    if MONEY_STYLE.get() == "USD":
+        return f"{sign}${_western(whole)}" + (f".{frac}" if decimals else "")
     if len(whole) > 3:
         head, tail = whole[:-3], whole[-3:]
         groups = []
@@ -23,6 +37,8 @@ def inr_words(value: float) -> str:
     """Short human form: '₹23.23 lakh', '₹1.50 crore', or the full amount below one lakh."""
     a = abs(value)
     sign = "-" if value < 0 else ""
+    if MONEY_STYLE.get() == "USD":
+        return format_inr(value)
     if a >= 1e7:
         return f"{sign}₹{a / 1e7:.2f} crore"
     if a >= 1e5:
@@ -34,7 +50,7 @@ def group(value: float, decimals: int = 0) -> str:
     """Indian digit grouping for table cells, accounting style: negatives in brackets, no currency sign."""
     if value is None:
         return ""
-    body = format_inr(abs(value), decimals)[1:]
+    body = format_inr(abs(value), decimals).lstrip("$₹")
     return f"({body})" if round(value, decimals) < 0 else body
 
 

@@ -25,7 +25,7 @@ _DOMAIN = re.compile(r"(?i)\b(?:https?://)?((?:[a-z0-9-]+\.)+(?:gov\.in|org\.in|
 ALLOWED_DOMAINS = ("sebi.gov.in", "rbi.org.in", "incometax.gov.in", "incometaxindia.gov.in", "amfiindia.com",
                    "mutualfundssahihai.com", "dicgc.org.in", "irdai.gov.in", "pfrda.org.in", "nseindia.com", "bseindia.com",
                    "nsdl.co.in", "cdslindia.com", "cybercrime.gov.in")
-_FIGURE = re.compile(r"(?i)(?:(₹|rs\.?|inr)\s*)?(?<![\w.])(\d+(?:,\d+)*(?:\.\d+)?)\s*(%|per ?cent|lakhs?|lacs?|crores?|cr\b)?")
+_FIGURE = re.compile(r"(?i)(?:(₹|rs\.?|inr|\$|usd|€|£)\s*)?(?<![\w.])(\d+(?:,\d+)*(?:\.\d+)?)\s*(%|per ?cent|lakhs?|lacs?|crores?|cr\b)?")
 _UNIT = {"lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "lacs": 1e5, "crore": 1e7, "crores": 1e7, "cr": 1e7}
 
 
@@ -43,7 +43,12 @@ def _figures(text: str, claims_only: bool) -> set[float]:
     return out
 
 
-def unsupported_figures(answer: str, evidence: str, rel_tol: float = 0.0) -> list[str]:
+def _big_plain(num: str) -> bool:
+    digits = num.replace(",", "").split(".")[0].lstrip("0")
+    return len(digits) >= 4 or "." in num
+
+
+def unsupported_figures(answer: str, evidence: str, rel_tol: float = 0.0, plain_numbers: bool = False) -> list[str]:
     allowed = _figures(evidence, claims_only=False)
 
     def supported(cands: set) -> bool:
@@ -54,7 +59,7 @@ def unsupported_figures(answer: str, evidence: str, rel_tol: float = 0.0) -> lis
     for m in _FIGURE.finditer(answer or ""):
         cur, num, unit = m.groups()
         unit_l = (unit or "").lower().replace(" ", "")
-        if not (cur or unit_l):
+        if not (cur or unit_l or (plain_numbers and _big_plain(num))):
             continue
         v = float(num.replace(",", ""))
         candidates = {round(v, 4)} | ({round(v * _UNIT[unit_l], 4)} if unit_l in _UNIT else set())
@@ -80,6 +85,11 @@ class ReviewResult:
     passed: bool
     codes: list[str] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
+
+
+def _strip_math_markup(text: str) -> str:
+    """Drop LaTeX commands and $$ so formula markup is not read as figures (e.g. 10^{-3})."""
+    return re.sub(r"\\[a-zA-Z]+", " ", text).replace("$$", " ")
 
 
 def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: int, source_urls: tuple = (), evidence: str | None = None) -> ReviewResult:
@@ -135,7 +145,7 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
         issues.append(f"It mentions websites that may not exist or are not official: {', '.join(unknown)}. "
                       "Only mention sebi.gov.in, rbi.org.in, incometax.gov.in, amfiindia.com, dicgc.org.in or scores.sebi.gov.in.")
     if evidence is not None and flags.get("calculation_intent") and tools_used:
-        bad = unsupported_figures(text, evidence, rel_tol=0.005)
+        bad = unsupported_figures(_strip_math_markup(text), evidence, rel_tol=0.005, plain_numbers=True)
         if bad:
             codes.append("unsupported_figures")
             issues.append(f"These figures do not match any calculator result or the question: {', '.join(bad)}. "

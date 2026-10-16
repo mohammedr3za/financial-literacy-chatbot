@@ -29,9 +29,27 @@ async function health() {
   catch (_) { setOnline(false); }
 }
 
+// Math convention: $$…$$ and \[…\] are display, \(…\) is inline. A single $ is always currency, never math.
+// Code spans and fences are matched first so TeX-looking text inside them is left alone.
+const MATH = /(```[\s\S]*?```|`[^`\n]+`)|\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)/g;
+const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function tex(src, displayMode) {
+  try {
+    if (window.katex) return katex.renderToString(src, { displayMode, throwOnError: false, trust: false, strict: "ignore" });
+  } catch (_) {}
+  return `<code class="${displayMode ? "math-tex block" : "math-tex"}">${escapeHtml(src)}</code>`;
+}
 function markdown(text) {
-  const html = window.marked ? marked.parse(text || "") : (text || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-  return window.DOMPurify ? DOMPurify.sanitize(html) : html;
+  const math = [];  // pull math out before marked, which would eat the backslashes and underscores
+  const body = (text || "").replace(MATH, (m, code, dd, br, inl) => {
+    if (code) return m;
+    math.push([(dd ?? br ?? inl).trim(), inl == null]);
+    return `@@MATH${math.length - 1}@@`;
+  });
+  const html = window.marked ? marked.parse(body) : escapeHtml(body);
+  const safe = window.DOMPurify ? DOMPurify.sanitize(html) : html;
+  // KaTeX output (trust: false) is inserted after sanitising, so DOMPurify cannot strip its MathML.
+  return safe.replace(/@@MATH(\d+)@@/g, (m, i) => (math[i] ? tex(math[i][0], math[i][1]) : m));
 }
 function table(t) {
   const card = el("div", "card"); card.append(el("div", "eyebrow", t.title));

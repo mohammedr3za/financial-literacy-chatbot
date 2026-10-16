@@ -108,6 +108,7 @@ _STATEMENT = re.compile(r"(?i)\b(balance sheet|profit (and|&) loss|p&l|income st
                         r"debtors|creditors|depreciation|dupont|roe|roa|liquidity|leverage)\b")
 _REGULATORY = re.compile(r"(?i)\b(sebi|rbi|amfi|dicgc|tax\w*|tds|section \d+\w*|rule|regulation|regulat\w+|law|legal|illegal|allowed|"
                          r"ombudsman|complaint|insur\w+|kyc|registered|licen[cs]\w*|circular|guideline|compliance)\b")
+_GIVEN_RATE = re.compile(r"(?i)\b(tax|gst|tds)\s+rate\s+(of\s+)?\d+(\.\d+)?\s*(%|percent|per cent)?|\d+(\.\d+)?\s*(%|percent|per cent)\s+(tax|gst|tds)(\s+rate)?")
 _INVEST = re.compile(r"(?i)\b(invest\w*|stocks?|shares?|equity|mutual funds?|sip|returns?|portfolio|ipo|bonds?|fd|fixed deposit|"
                      r"gold|real estate|nps|ppf|elss|etf|trading|crypto\w*|savings?)\b")
 
@@ -145,7 +146,9 @@ def precheck(user_text: str, previous_question: str | None = None) -> PrecheckRe
     followup = bool(previous_question) and is_followup(clean)
     routed_text = f"{redact(previous_question)[0]} {clean}" if followup else clean
     calc_types = detect_calc_types(routed_text, has_quantity(routed_text), statement)
+    usd = bool(re.search(r"\$\s?\d|\bUSD\b|\bdollars?\b", clean, re.I)) and not re.search(r"₹|\brs\.?\s?\d|\binr\b|rupee|lakh|crore", clean, re.I)
     flags = {
+        "currency": "USD" if usd else "INR",
         "followup": followup and bool(calc_types),   # only calculation follow-ups get the "reuse the numbers" note
         "calc_types": calc_types,
         "statement_data": statement,
@@ -153,7 +156,8 @@ def precheck(user_text: str, previous_question: str | None = None) -> PrecheckRe
         "personal_advice_request": bool(_ADVICE.search(clean)),
         "high_risk_topic": bool(_HIGH_RISK.search(clean)),
         "calculation_intent": (bool(_CALC.search(clean)) and has_number) or statement or bool(calc_types),
-        "regulatory_topic": bool(_REGULATORY.search(clean)),
+        # a tax rate the user states is an input, not an Indian rule to verify; dollar textbook problems are not Indian regulation
+        "regulatory_topic": bool(_REGULATORY.search(_GIVEN_RATE.sub(" ", clean))) and not usd,
         "investment_topic": bool(_INVEST.search(clean) or _HIGH_RISK.search(clean)),
         "concept_question": bool(_CONCEPT.search(clean)) and not _PERSONAL.search(clean),
     }

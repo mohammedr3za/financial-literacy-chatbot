@@ -22,6 +22,13 @@ h1 { font-size: clamp(40px, 9vw, 56px); line-height: 1.02; font-weight: 400; let
 .answer p, .answer li { margin: .45em 0; }
 .answer table { border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13.5px; }
 .answer th, .answer td { border-bottom: 1px solid var(--line); padding: 6px 10px; }
+.answer .katex { font-size: 1.1em; color: var(--ink); }
+.answer .katex-display { margin: .8em 0; text-align: center; overflow-x: auto; overflow-y: hidden; padding: 4px 0;
+  -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.answer .katex-display > .katex { font-size: 1.15em; }
+.answer .math-tex { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; background: #F2F0EA;
+  border-radius: 6px; padding: 1px 6px; }
+.answer .math-tex.block { display: block; margin: .8em 0; padding: 8px 12px; overflow-x: auto; white-space: pre; }
 .warn { color: var(--accent); font-size: 12.5px; margin: 4px 0 8px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 18px 20px 14px; margin: 16px 0; }
 .card .eyebrow { margin-bottom: 12px; }

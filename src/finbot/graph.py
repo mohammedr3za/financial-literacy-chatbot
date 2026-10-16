@@ -14,6 +14,7 @@ from .precheck import precheck as run_precheck
 from .prompts import SYSTEM_PROMPT, context_block
 from .review import FOOTER, review_answer, reviewer_note
 from .tables import to_markdown
+from .tools.fmt import MONEY_STYLE
 from .tools.registry import CALC_TOOLS, TOOLS_BY_NAME
 
 _THINK = re.compile(r"<think>.*?</think>", re.S)
@@ -137,6 +138,7 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         """Run tool calls. Statement tools must only use figures from the user's message (SPEC 3.1)."""
         user_text = text_of(state["messages"][state["question_idx"]])
         out = []
+        style = MONEY_STYLE.set(state.get("flags", {}).get("currency", "INR"))   # $ questions get $ formatting
         for tc in state["messages"][-1].tool_calls:
             bad = ungrounded_values(tc["args"], user_text) if tc["name"] in GROUNDED_TOOLS else []
             if bad:
@@ -151,6 +153,7 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
                 except Exception as exc:  # invalid arguments: tell the model so it can retry
                     content = json.dumps({"error": f"Invalid arguments for {tc['name']}: {exc}"})
             out.append(ToolMessage(content=content, tool_call_id=tc["id"], name=tc["name"]))
+        MONEY_STYLE.reset(style)
         return {"messages": out}
 
     def route_after_agent(state: State) -> str:
@@ -159,7 +162,8 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
     def review(state: State) -> dict:
         msgs, qi = state["messages"], state["question_idx"]
         turn = msgs[qi + 1:]
-        tools_used = [tc["name"] for m in turn if isinstance(m, AIMessage) for tc in (m.tool_calls or [])]
+        failed = {m.tool_call_id for m in turn if isinstance(m, ToolMessage) and str(m.content).lstrip().startswith('{"error"')}
+        tools_used = [tc["name"] for m in turn if isinstance(m, AIMessage) for tc in (m.tool_calls or []) if tc["id"] not in failed]
         last_ai = next(m for m in reversed(msgs) if isinstance(m, AIMessage))
         answer = text_of(last_ai)
         srcs = state.get("sources", [])

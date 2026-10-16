@@ -34,7 +34,7 @@ REQUIRED_TOOLS = {
     "real_return": {"real_return"}, "effective_rate": {"effective_annual_rate"}, "emi": {"loan_emi"},
     "cagr": {"tvm"}, "npv_irr": {"npv_irr"}, "bond": {"bond_metrics"}, "option": {"black_scholes"},
     "sip_fv": {"sip_future_value", "goal_saving"}, "lump_fv": {"tvm"}, "percent": {"calculate"},
-    "statement": {"financial_ratios", "balance_sheet_check", "cash_flow_statement"},
+    "statement": {"financial_ratios", "balance_sheet_check", "cash_flow_statement", "calculate", "solve_equation"},
 }
 
 HINTS = {
@@ -56,7 +56,8 @@ HINTS = {
     "percent": ("Use calculate. Apply each percentage to the right base: 'X% of A, plus Y% GST on that amount' means A × X/100 × (1 + Y/100). "
                 "Write the whole expression in one call. If you also show an intermediate amount (such as the GST amount alone), compute it with "
                 "calculate too; never work out a figure yourself."),
-    "statement": "Use financial_ratios, balance_sheet_check or cash_flow_statement with the figures exactly as given.",
+    "statement": ("Use financial_ratios, balance_sheet_check or cash_flow_statement with the figures exactly as given; for other "
+                  "statement arithmetic (net income, taxes, equity, working capital, values implied by ratios) use calculate or solve_equation."),
 }
 
 

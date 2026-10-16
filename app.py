@@ -105,8 +105,14 @@ def get_bot() -> FinBot:
 
 
 def latex(text: str) -> str:
-    text = re.sub(r"\\\[(.+?)\\\]", r"$$\1$$", text, flags=re.S)
-    return re.sub(r"\\\((.+?)\\\)", r"$\1$", text, flags=re.S)
+    """Map the model's math convention onto st.markdown's KaTeX syntax.
+
+    A lone `$` is always currency, so it is escaped (st.markdown would otherwise read `$675,000, costs of $337,000`
+    as inline math). `$$…$$` stays display math, `\\[…\\]` becomes `$$…$$`, and `\\(…\\)` becomes inline `$…$`.
+    """
+    text = re.sub(r"(?<![\\$])\$(?!\$)", r"\\$", text)
+    text = re.sub(r"\\\[(.+?)\\\]", lambda m: f"$${m.group(1)}$$", text, flags=re.S)
+    return re.sub(r"\\\((.+?)\\\)", lambda m: f"${m.group(1).strip()}$", text, flags=re.S)
 
 
 def esc(x) -> str:
