@@ -127,6 +127,300 @@ def _strip_math_markup(text: str) -> str:
     return re.sub(r"\\[a-zA-Z]+", " ", text).replace("$$", " ")
 
 
+# ---------------------------------------------------------------- check 11: shown working must add up
+# Every fully numeric expression in the answer is evaluated with the safe calculator and must equal a figure the answer
+# states. Only clear working is checked: anything joined to words or units, ranges, dates and unparseable text is skipped.
+_DISPLAY_MATH = re.compile(r"\$\$(.+?)\$\$|\\\[(.+?)\\\]", re.S)
+_INLINE_MATH = re.compile(r"\\\((.+?)\\\)", re.S)
+_FRAC = re.compile(r"\\[dt]?frac\s*")
+_TEXT_CMD = re.compile(r"\\(?:text|mathrm|textbf|mathbf|textit|mathit|operatorname|mbox)\s*\{([^{}]*)\}")
+_LATEX_SUBS = [
+    (re.compile(r"\\(?:begin|end)\s*\{[^{}]*\}"), "\n"), (re.compile(r"\\\\"), "\n"), (re.compile(r"&"), " "),
+    (re.compile(r"\\(?:times|cdot|ast)(?![A-Za-z])"), "×"), (re.compile(r"\\div(?![A-Za-z])"), "÷"),
+    (re.compile(r"\\(?:approx|simeq|sim)(?![A-Za-z])"), "≈"),
+    (re.compile(r"\\(?:Rightarrow|rightarrow|Longrightarrow|implies|therefore|to)(?![A-Za-z])"), "\n"),
+    (re.compile(r"\\(?:left|right|bigl|bigr|Bigl|Bigr|big|Big)(?![A-Za-z])"), ""),
+    (re.compile(r"\\%"), "%"), (re.compile(r"\\\$"), "$"), (re.compile(r"(?<=\d)\{,\}(?=\d)"), ","),
+    (re.compile(r"(?<=\d)\\,(?=\d)"), ""), (re.compile(r"\\(?:quad|qquad|[,;:! ])"), " "),
+    (re.compile(r"_\{[^{}]*\}|_[A-Za-z0-9]+"), ""),                   # subscripts: PVIFA_{10%,2}
+    (re.compile(r"\\\{"), "("), (re.compile(r"\\\}"), ")"),
+    (re.compile(r"\\([A-Za-z]+)"), r" \1 "),                         # any other command reads as a word (\sqrt, \ln)
+]
+_SCALE_WORDS = {"lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "lacs": 1e5, "crore": 1e7, "crores": 1e7, "cr": 1e7,
+                "thousand": 1e3, "million": 1e6, "mn": 1e6, "billion": 1e9, "bn": 1e9}
+_NUM_AT = re.compile(r"([$₹]\s?)?(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)(\s?%)?")
+_OP_CHARS = {"×": "*", "·": "*", "*": "*", "÷": "/", "/": "/", "∕": "/", "+": "+", "−": "-", "-": "-", "^": "**"}
+
+
+def _brace_group(s: str, i: int):
+    depth = 0
+    for j in range(i, len(s)):
+        depth += {"{": 1, "}": -1}.get(s[j], 0)
+        if depth == 0:
+            return s[i + 1:j], j + 1
+    return None
+
+
+def _fracs(s: str) -> str:
+    """\\frac{a}{b} -> ((a)∕(b)), nested fractions included (∕ marks a typeset fraction, unlike a plain-text 24/7)."""
+    out, i = [], 0
+    while (m := _FRAC.search(s, i)) is not None:
+        out.append(s[i:m.start()])
+        a = _brace_group(s, m.end()) if s[m.end():m.end() + 1] == "{" else None
+        k = a[1] if a else 0
+        while a and k < len(s) and s[k] == " ":
+            k += 1
+        b = _brace_group(s, k) if a and s[k:k + 1] == "{" else None
+        if not (a and b):
+            out.append(" frac ")      # malformed: reads as a word, so the expression is skipped
+            i = m.end()
+            continue
+        out.append(f"(({_fracs(a[0])})∕({_fracs(b[0])}))")
+        i = b[1]
+    return "".join(out) + s[i:]
+
+
+def _latex_to_plain(s: str) -> str:
+    s = _TEXT_CMD.sub(r" \1 ", s)
+    s = _fracs(s)
+    for pattern, repl in _LATEX_SUBS:
+        s = pattern.sub(repl, s)
+    return s.replace("{", "(").replace("}", ")").replace("[", "(").replace("]", ")").replace("-", "−")
+
+
+def _normalize_for_working(text: str) -> str:
+    text = _DISPLAY_MATH.sub(lambda m: "\n" + _latex_to_plain(m.group(1) or m.group(2)) + "\n", text)
+    text = _INLINE_MATH.sub(lambda m: " " + _latex_to_plain(m.group(1)) + " ", text)
+    text = re.sub(r"(?m)^\s*(?:[-*+]|\d+\.)\s+", "\n", text)            # markdown bullets and numbered lists
+    text = text.replace("**", "").replace("__", "").replace("`", "")
+    return re.sub(r"(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])", r"\1", text)   # *italic*
+
+
+@dataclass
+class _Tok:
+    kind: str                 # NUM OP LP RP WORD EQ SEP
+    text: str
+    space: bool = False       # whitespace right before the token
+    value: float = 0.0
+    decimals: int = 0
+    pct: bool = False
+    unary: bool = False
+
+
+def _tokenize(text: str) -> list[_Tok]:
+    toks, i, n, space = [], 0, len(text), False
+    while i < n:
+        ch, prev = text[i], text[i - 1] if i else " "
+        if ch.isspace():
+            j = i
+            while j < n and text[j].isspace():
+                j += 1
+            if "\n" in text[i:j]:
+                toks.append(_Tok("SEP", "\n", True))
+            space, i = True, j
+            continue
+        m = _NUM_AT.match(text, i) if (ch.isdigit() or ch in "$₹.") and not (prev.isalnum() or prev in "._") else None
+        if m and not (m.end() < n and (text[m.end()].isalpha() or text[m.end()] == "_") and not m.group(3)):
+            num = m.group(2)
+            toks.append(_Tok("NUM", m.group(0).strip(), space, float(num.replace(",", "")),
+                             len(num.split(".")[1]) if "." in num else 0, bool(m.group(3))))
+            i, space = m.end(), False
+            continue
+        if ch.isalnum() or ch == "_":                                  # words, and "2nd", "115BBH", "60W"
+            j = i
+            while j < n and (text[j].isalnum() or text[j] in "_'"):
+                j += 1
+            toks.append(_Tok("WORD", text[i:j], space))
+            i, space = j, False
+            continue
+        nxt = text[i + 1] if i + 1 < n else " "
+        if ch == "-":   # a minus only when spaced (" - ") or a sign ("-3.60"); otherwise a range, date or hyphenated word
+            sign = (nxt.isdigit() or nxt in "$₹.(") and not prev.isalnum() and (
+                not toks or space or toks[-1].kind in ("LP", "EQ", "OP", "SEP"))
+            kind = "OP" if (space and nxt.isspace()) or sign else "SEP"
+        else:
+            kind = ("OP" if ch in _OP_CHARS else "LP" if ch == "(" else "RP" if ch == ")"
+                    else "EQ" if ch in "=≈≃" else "SEP")
+        toks.append(_Tok(kind, ch, space))
+        i, space = i + 1, False
+    return toks
+
+
+def _expr(run: list[_Tok], pct_as_fraction: bool, bump: int = -1) -> str:
+    """Python arithmetic for the safe calculator; bump perturbs one operand by half a unit of its last shown digit."""
+    parts, last = [], None
+    for k, t in enumerate(run):
+        if t.kind in ("NUM", "LP") and last in ("NUM", "RP"):
+            parts.append("*")                                          # implicit product: (1 + 1.80)(6,269)
+        if t.kind == "NUM":
+            v = t.value + (0.5 * 10 ** -t.decimals if k == bump else 0)
+            parts.append(f"({v!r}/100)" if t.pct and pct_as_fraction else repr(v))
+        else:
+            parts.append(_OP_CHARS.get(t.text, t.text))
+        last = "NUM" if t.kind == "NUM" else t.kind
+    return " ".join(parts)
+
+
+def _display(run: list[_Tok]) -> str:
+    out = []
+    for k, t in enumerate(run):
+        if t.kind == "LP" and k + 2 < len(run) and run[k + 1].kind == "NUM" and run[k + 2].kind == "RP":
+            continue                                                    # (2885) -> 2885
+        if t.kind == "RP" and k >= 2 and run[k - 1].kind == "NUM" and run[k - 2].kind == "LP":
+            continue
+        text = {"*": "×", "·": "×", "/": "÷", "∕": "÷", "-": "−"}.get(t.text, t.text) if t.kind == "OP" else t.text
+        out.append(text if t.kind in ("NUM", "LP", "RP") or t.unary else f" {text} ")
+    s = re.sub(r"\(\s*\(([^()]*)\)\s*\)", r"(\1)", "".join(out)).strip()
+    while s.startswith("(") and s.endswith(")") and _balanced(s[1:-1]):
+        s = s[1:-1].strip()
+    return re.sub(r"\s+", " ", s)
+
+
+def _balanced(s: str) -> bool:
+    depth = 0
+    for ch in s:
+        depth += {"(": 1, ")": -1}.get(ch, 0)
+        if depth < 0:
+            return False
+    return depth == 0
+
+
+def _runs(toks: list[_Tok]):
+    """Candidate expressions: lists of token indices (numbers, operators, brackets) inside one clause. A clause ends at
+    "=", "≈" or punctuation; a clause where an operator touches a word ("3.39 × PVIFA") is symbolic and skipped whole."""
+    start = 0
+    for end in range(len(toks) + 1):
+        if end < len(toks) and toks[end].kind not in ("SEP", "EQ"):
+            continue
+        clause = list(range(start, end))
+        start = end + 1
+        symbolic = False
+        for j in clause:
+            t = toks[j]
+            prv = toks[j - 1] if j > clause[0] else None
+            nxt = toks[j + 1] if j + 1 < end else None
+            if t.kind == "OP":
+                t.unary = t.text in "−-+" and (prv is None or prv.kind in ("LP", "OP", "WORD")) and nxt is not None \
+                    and nxt.kind in ("NUM", "LP")
+                if (nxt is not None and nxt.kind == "WORD") or (not t.unary and prv is not None and prv.kind == "WORD"):
+                    symbolic = True                                     # "3.39 × PVIFA", "hours × 0.06"
+            elif t.kind == "LP" and prv is not None and prv.kind == "WORD" and not t.space:
+                symbolic = True                                         # PVIFA(10%, 2)
+        if symbolic:
+            continue
+        span = []
+        for j in clause + [None]:
+            if j is not None and toks[j].kind in ("NUM", "OP", "LP", "RP") and not (
+                    span and toks[j].kind == "NUM" and toks[span[-1]].kind == "NUM"):
+                span.append(j)
+                continue
+            if span:
+                yield span
+            span = [j] if j is not None and toks[j].kind in ("NUM", "OP", "LP", "RP") else []
+
+
+def _trim(toks: list[_Tok], span: list[int]) -> list[int] | None:
+    while span and toks[span[-1]].kind == "LP":
+        span = span[:-1]
+    while span and toks[span[0]].kind == "RP":
+        span = span[1:]
+    for _ in range(4):                                                  # brackets opened or closed in the prose around it
+        text = "".join(toks[j].text for j in span if toks[j].kind in ("LP", "RP"))
+        if _balanced(text):
+            break
+        if span and toks[span[0]].kind == "LP" and text.count("(") > text.count(")"):
+            span = span[1:]
+        elif span and toks[span[-1]].kind == "RP" and text.count(")") > text.count("("):
+            span = span[:-1]
+        else:
+            return None
+    if not span or not _balanced("".join(toks[j].text for j in span if toks[j].kind in ("LP", "RP"))):
+        return None
+    first, last = toks[span[0]], toks[span[-1]]
+    if (first.kind == "OP" and not first.unary) or last.kind == "OP":
+        return None                                                     # joined to something outside the expression
+    return span
+
+
+def _evaluate(run: list[_Tok], pct_as_fraction: bool) -> tuple[float, float] | None:
+    from .tools.math_engine import calculate
+    try:
+        v = calculate(_expr(run, pct_as_fraction))["result"]["value"]
+    except ValueError:
+        return None
+    err = 0.0
+    for k, t in enumerate(run):                                         # rounding of the operands shown
+        if t.kind == "NUM" and t.decimals:
+            try:
+                err += abs(calculate(_expr(run, pct_as_fraction, bump=k))["result"]["value"] - v)
+            except ValueError:
+                return None
+    return v, err
+
+
+def _fmt_value(v: float) -> str:
+    if abs(v) >= 100:
+        return f"{v:,.2f}".removesuffix(".00")
+    return f"{v:,.4f}".rstrip("0").rstrip(".") or "0"
+
+
+def arithmetic_mismatches(answer: str) -> list[dict]:
+    """Shown working that evaluates to no figure the answer states: [{"expression", "value", "stated"}]."""
+    toks = _tokenize(_normalize_for_working(answer or ""))
+    stated = []                                                         # (token index, |value|, half a unit of the last digit)
+    for j, t in enumerate(toks):
+        if t.kind == "NUM":
+            half = 0.5 * 10 ** -t.decimals
+            stated.append((j, abs(t.value), half))
+            unit = toks[j + 1].text.lower() if j + 1 < len(toks) and toks[j + 1].kind == "WORD" else ""
+            if unit in _SCALE_WORDS:
+                stated.append((j, abs(t.value) * _SCALE_WORDS[unit], half * _SCALE_WORDS[unit]))
+    found, spans = [], []
+    for span in _runs(toks):
+        span = _trim(toks, span)
+        if span:
+            spans.append(span)
+    for span in spans:
+        run = [toks[j] for j in span]
+        nums = [t for t in run if t.kind == "NUM"]
+        ops = [t for t in run if t.kind == "OP" and not t.unary]
+        if len(nums) < 2 or not ops:
+            continue
+        before = toks[span[0] - 1] if span[0] else None
+        after = toks[span[-1] + 1] if span[-1] + 1 < len(toks) else None
+        if after is not None and after.kind in ("WORD", "NUM"):
+            continue                                                    # "$0.37 + $3.39 a year": a unit follows
+        if before is not None and before.kind == "WORD" and span[0] >= 2 and toks[span[0] - 2].kind == "NUM":
+            continue                                                    # "15% of 2,000 × 1.18": joined by a word
+        if (all(t.text == "/" for t in ops) and all(not t.decimals and not t.pct for t in nums)
+                and not (after is not None and after.kind == "EQ")):
+            continue                                                    # plain-text 24/7, 1/3, 01/04/2026
+        if any(t.pct for t in nums) and any(t.text in "+−-" for t in ops) and any(
+                not t.pct and t.value not in (1, 100) for t in nums):
+            continue                                                    # ₹5,000 + 18% (GST): not arithmetic
+        variants = [r for r in (_evaluate(run, False), _evaluate(run, True) if any(t.pct for t in nums) else None) if r]
+        if not variants:
+            continue
+        own = set(span)
+        targets = [(s, h) for j, s, h in stated if j not in own]
+        if after is not None and after.kind == "EQ":                    # a chain: A = B, where B is another expression
+            nxt = next((sp for sp in spans if sp[0] == span[-1] + 2), None)
+            if nxt is not None:
+                v2 = _evaluate([toks[j] for j in nxt], False)
+                if v2:
+                    targets.append((abs(v2[0]), v2[1]))
+
+        def agrees(v: float, err: float) -> bool:
+            return any(abs(vv - s) <= max(0.005 * s, h, ee, 1e-9) for s, h in targets
+                       for vv, ee in ((abs(v), err), (abs(v) * 100, err * 100), (abs(v) / 100, err / 100)))
+        if any(agrees(v, err) for v, err in variants):
+            continue
+        later = [toks[j] for j in range(span[-1] + 1, len(toks)) if toks[j].kind == "NUM"]
+        found.append({"expression": _display(run), "value": round(variants[0][0], 6),
+                      "stated": later[0].text if later else None})
+    return found
+
+
 def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: int, source_urls: tuple = (), evidence: str | None = None) -> ReviewResult:
     codes, issues = [], []
     text = answer or ""
@@ -177,6 +471,14 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
         codes.append("tool_narration")
         issues.append(f"It mentions an internal tool or tool call (\"{narration.group(0)}\"). Give the result in plain words; "
                       "do not describe tool calls or name tools.")
+    mismatches = arithmetic_mismatches(text)
+    if mismatches:
+        parts = [f"{m['expression']} evaluates to {_fmt_value(m['value'])}, but the answer states {m['stated']}" if m["stated"]
+                 else f"{m['expression']} evaluates to {_fmt_value(m['value'])}, which is not a figure the answer states"
+                 for m in mismatches[:3]]
+        codes.append("arithmetic_mismatch")
+        issues.append(f"The working shown does not match the result: {'; '.join(parts)}. Recompute with the right tool "
+                      "(for statement items, solve_financials) and make every step you show agree with the result you state.")
     allowed = ALLOWED_DOMAINS + tuple(_DOMAIN.findall(" ".join(source_urls)))
     unknown = sorted({d.lower() for d in _DOMAIN.findall(text)
                       if not any(d.lower() == a or d.lower().endswith("." + a) for a in allowed)})

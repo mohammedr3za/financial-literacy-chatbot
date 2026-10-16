@@ -156,8 +156,8 @@ def precheck(user_text: str, previous_question: str | None = None) -> PrecheckRe
     followup = bool(previous_question) and is_followup(clean)
     routed_text = f"{redact(previous_question)[0]} {clean}" if followup else clean
     calc_types = detect_calc_types(routed_text, has_quantity(routed_text), statement)
-    if "npv_irr" in calc_types and not (_CORPORATE.search(clean) or _STATEMENT_DOC.search(clean)):
-        statement = False                                  # a table of project cash flows is not a financial statement
+    if {"npv_irr", "eac"} & set(calc_types) and not (_CORPORATE.search(clean) or _STATEMENT_DOC.search(clean)):
+        statement = False                                  # a table of project cash flows (or a cost comparison) is not a statement
         calc_types = [k for k in calc_types if k != "statement"]
     usd = bool(re.search(r"\$\s?\d|\bUSD\b|\bdollars?\b", clean, re.I)) and not re.search(r"₹|\brs\.?\s?\d|\binr\b|rupee|lakh|crore", clean, re.I)
     flags = {

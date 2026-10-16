@@ -13,6 +13,11 @@ _LOAN_ASK = re.compile(r"\b(payments?|instal+ments?|emi|apr|repa(y|id|ying|yment
                        r"(what|which|highest|maximum|max|implied) (annual )?(interest )?rate)\b", I)
 _PERIODIC = re.compile(r"\b(sip|every month|each month|per month|a month|monthly|every year|each year|per year|regularly)\b", I)
 
+_TAX_ASK = re.compile(r"\bincome[- ]?tax\b|\btax (liability|payable|outgo)\b|\bhow much (income )?tax\b|\btax (will|would|do|should|must) i\b|"
+                     r"\b(my|the) tax\b|\btax on (my )?(salary|income)\b|\b(old|new) (tax )?regime\b|"
+                     r"\bhow much\b[^.?]{0,40}\btax(es)?\b|\b(pay|owe)\b[^.?]{0,20}\btax(es)?\b", I)
+_TAX_CTX = re.compile(r"\bsalary\b|\bctc\b|\bregime\b|\bhra\b|\b80c\b|\b80d\b|\blakhs?\b|\bcrores?\b|₹|\brs\.?\s|\binr\b|per annum|\bp\.?a\.?\b", I)
+
 ROUTES = [  # (type, test) in priority order
     ("goal_saving", lambda q: bool(_ASK_AMOUNT.search(q) and _TARGET.search(q) and _PERIODIC.search(q))),
     ("present_value", lambda q: bool(_ASK_AMOUNT.search(q) and _TARGET.search(q) and _LUMP.search(q) and not _PERIODIC.search(q))),
@@ -23,8 +28,9 @@ ROUTES = [  # (type, test) in priority order
     ("emi", lambda q: bool(re.search(r"\bemi\b|\bequated monthly\b|\bmonthly instal+ments?\b", q, I))),
     ("loan", lambda q: bool(_LOAN.search(q) and _LOAN_ASK.search(q))),
     ("cagr", lambda q: bool(re.search(r"\bcagr\b|compound(ed)? annual growth|annuali[sz]ed return", q, I))),
-    ("npv_irr", lambda q: bool(re.search(r"\bnpv\b|\birr\b|net present value|internal rate of return|\bpayback\b|profitability index|"
-                                         r"equivalent annual (cost|annuity|annual)|\beac\b|\beaa\b", q, I))),
+    ("income_tax", lambda q: bool(_TAX_ASK.search(q) and _TAX_CTX.search(q))),
+    ("eac", lambda q: bool(re.search(r"equivalent annual (cost|annuity)|\beac\b|\beaa\b", q, I))),
+    ("npv_irr", lambda q: bool(re.search(r"\bnpv\b|\birr\b|net present value|internal rate of return|\bpayback\b|profitability index", q, I))),
     ("bond", lambda q: bool(re.search(r"\bbond\b|\bytm\b|yield to maturity|\bcoupon\b", q, I))),
     ("option", lambda q: bool(re.search(r"black[- ]?scholes|\b(call|put) options?\b|\boption (price|premium)\b", q, I))),
     ("sip_fv", lambda q: bool(re.search(r"\bsip\b|\b(invest|put|save|deposit)\w*\b.{0,30}\b(every|each|per|a) month\b|\bmonthly (investment|deposit)\b", q, I))),
@@ -39,7 +45,8 @@ EXCLUSIVE = {"goal_saving": {"sip_fv", "lump_fv", "present_value"}, "present_val
 REQUIRED_TOOLS = {
     "goal_saving": {"goal_saving"}, "present_value": {"tvm", "goal_saving"}, "years": {"tvm"},
     "real_return": {"real_return"}, "effective_rate": {"effective_annual_rate"}, "emi": {"loan_emi"}, "loan": {"loan_emi"},
-    "cagr": {"tvm"}, "npv_irr": {"npv_irr"}, "bond": {"bond_metrics"}, "option": {"black_scholes"},
+    "cagr": {"tvm"}, "npv_irr": {"npv_irr"}, "eac": {"equivalent_annual_cost", "npv_irr"}, "income_tax": {"income_tax"}, "bond": {"bond_metrics"},
+    "option": {"black_scholes"},
     "sip_fv": {"sip_future_value", "goal_saving"}, "lump_fv": {"tvm"}, "percent": {"calculate"},
     "statement": {"solve_financials", "financial_ratios", "balance_sheet_check", "cash_flow_statement", "calculate", "solve_equation"},
 }
@@ -62,10 +69,14 @@ HINTS = {
     "loan": _LOAN_HINT,
     "cagr": "Call tvm(solve_for='annual_rate_pct', years=..., pv=<starting value>, fv=<ending value>).",
     "npv_irr": ("Call npv_irr(cashflows=[-investment, inflow year 1, ...], discount_rate_pct only if a rate is given), once per project. "
-                "It also returns profitability_index and equivalent_annual_amount. Equivalent annual cost (EAC) of each option: first get "
-                "the life in years (total lifetime ÷ use per year) and the yearly running cost with calculate (for electricity: watts ÷ 1000 "
-                "× hours per year × price per kWh); then cashflows = [-purchase price] followed by -(yearly running cost) once for EVERY "
-                "year of the life, and report equivalent_annual_amount as the EAC (negative = a cost)."),
+                "It also returns profitability_index. For an equivalent annual cost use equivalent_annual_cost instead."),
+    "income_tax": ("Indian salary tax: call income_tax with only the figures the user gave (per-month amounts in the *_monthly "
+                   "fields), regime='both' unless they chose one. Report both regimes' totals and the lower one. If the old-regime "
+                   "HRA exemption needs rent paid, basic + DA or the city, say so and ask for them; never estimate tax yourself."),
+    "eac": ("Call equivalent_annual_cost once per option with purchase_cost and rate_pct, costs as positive numbers (salvage only if "
+            "given). For electricity (watts, kWh) pass power_watts, hours_per_year, price_per_kwh and lifetime_hours exactly as the "
+            "question gives them; otherwise pass annual_cost and life_years. Report its eac, which is negative because it is a cost, "
+            "and its annual_cost and life_years. Never write out the yearly cash flows."),
     "bond": "Call bond_metrics(face, coupon_pct, years, freq, and either ytm_pct or price).",
     "option": "Call black_scholes(spot, strike, years, rate_pct, vol_pct, kind).",
     "sip_fv": "The monthly amount is known: call sip_future_value(monthly=..., annual_return_pct=..., years=...).",
@@ -88,8 +99,8 @@ def detect(question: str, has_number: bool, statement: bool) -> list[str]:
     found = [kind for kind, test in ROUTES if test(question)]
     for kind in list(found):
         found = [k for k in found if k not in EXCLUSIVE.get(kind, set()) or k == kind]
-    if statement:
-        found.append("statement")
+    if statement:   # "85 percent of sales are on credit" is a statement input; the statement tools include calculate
+        found = [k for k in found if k != "percent"] + ["statement"]
     return found
 
 

@@ -109,6 +109,17 @@ def balance_sheet_check(assets: dict, liabilities: dict, equity: dict) -> dict:
     ta, tl, te = (sum(sec.values()) for _, sec in sections)
     if ta == 0:
         raise ValueError("Total assets are zero.")
+    # exactly one of liabilities / equity missing or all zero: it is the unknown, so derive it as the balancing figure
+    unknown = [i for i in (1, 2) if not any(sections[i][1].values())]
+    derived = {}
+    if len(unknown) == 1:
+        i = unknown[0]
+        name, sec = sections[i]
+        value = ta - (te if i == 1 else tl)
+        item = next(iter(sec), f"Total {name.lower()}")
+        sections[i] = (name, {f"{item} (derived)": value})
+        derived = {f"total_{name.lower()}": value}
+        tl, te = (value, te) if i == 1 else (tl, value)
     pct = lambda v: f"{v / ta * 100:.1f}%"  # noqa: E731
     rows, bold = [], []
     for name, sec in sections:
@@ -121,13 +132,20 @@ def balance_sheet_check(assets: dict, liabilities: dict, equity: dict) -> dict:
     note = "Balanced: assets equal liabilities plus equity." if abs(diff) < 0.5 else \
         f"Not balanced: assets exceed liabilities plus equity by {group(diff)}." if diff > 0 else \
         f"Not balanced: liabilities plus equity exceed assets by {group(-diff)}."
+    if derived:
+        key, value = next(iter(derived.items()))
+        what = key.removeprefix("total_")
+        other = "liabilities" if what == "equity" else "equity"
+        note = (f"Total {what} was not given, so it is derived as the balancing figure: total assets − total {other} = "
+                f"{group(value)}.")
     table = make_table("Balance sheet (common-size, % of total assets)", ["Section", "Item", "Amount", "% of total assets"],
                        rows, total=total, note=note, bold_rows=bold)
+    result = {"total_assets": ta, "total_liabilities": tl, "total_equity": te, "balanced": abs(diff) < 0.5, "difference": diff}
+    if derived:
+        result["derived"] = derived
     return {"inputs": {"assets": sections[0][1], "liabilities": sections[1][1], "equity": sections[2][1]},
-            "formula": "Assets = Liabilities + Equity",
-            "result": {"total_assets": ta, "total_liabilities": tl, "total_equity": te, "balanced": abs(diff) < 0.5,
-                       "difference": diff},
-            "formatted": {}, "table": table}
+            "formula": "Assets = Liabilities + Equity" + ("; the missing section is the balancing figure" if derived else ""),
+            "result": result, "formatted": {}, "table": table}
 
 
 def _change(name: str, v) -> float:

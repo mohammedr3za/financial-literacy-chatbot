@@ -15,11 +15,12 @@ from .prompts import SYSTEM_PROMPT, context_block
 from .review import FOOTER, review_answer, reviewer_note
 from .tables import to_markdown
 from .tools.financial_solver import KIND as SOLVER_KIND
+from .tools.financial_solver import resolve as solver_name
 from .tools.fmt import MONEY_STYLE
 from .tools.registry import CALC_TOOLS, TOOLS_BY_NAME
 
 _THINK = re.compile(r"<think>.*?</think>", re.S)
-GROUNDED_TOOLS = {"financial_ratios", "balance_sheet_check", "cash_flow_statement", "solve_financials"}
+GROUNDED_TOOLS = {"financial_ratios", "balance_sheet_check", "cash_flow_statement", "solve_financials", "equivalent_annual_cost", "income_tax"}
 _NUMBER = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|(?<![\w.,])\d+(?:\.\d+)?|(?<![\w.])\.\d+")   # ".84" too
 _SCALED = re.compile(r"(?i)(?<![\w.])(\d+(?:\.\d+)?|\.\d+)\s*(thousand|million|mn|billion|bn)\b")
 _SCALE = {"thousand": 1e3, "million": 1e6, "mn": 1e6, "billion": 1e9, "bn": 1e9}
@@ -50,7 +51,7 @@ def _arg_numbers(args, path=""):
 
 def _solver_unit_problem(name: str, a: float, allowed: set, percents: set, percent_only: set) -> str | None:
     """solve_financials units: *_pct items take the percent number, ratios a plain number. None if the value is grounded."""
-    kind = SOLVER_KIND.get(name)
+    kind = SOLVER_KIND.get(solver_name(name))
     if kind == "pct":
         fractions = {x for x in allowed if x < 1 and x not in percents}
         if (a in allowed and not (a < 1 and a not in percents)) or round(a / 100, 4) in fractions:
@@ -63,9 +64,13 @@ def _solver_unit_problem(name: str, a: float, allowed: set, percents: set, perce
     return None if a in allowed else ""
 
 
-def ungrounded_values(args: dict, user_text: str, tool: str | None = None) -> list[str]:
-    """Numbers in a statement-tool call that do not appear in the user's message (zeros are ignored)."""
+def ungrounded_values(args: dict, user_text: str, tool: str | None = None, tool_text: str = "") -> list[str]:
+    """Numbers in a grounded tool call that do not appear in the user's message (zeros are ignored).
+    equivalent_annual_cost may also use a result of an earlier tool call in this turn (tool_text)."""
     allowed = numbers_in(user_text)
+    if tool == "equivalent_annual_cost":
+        allowed = allowed | numbers_in(tool_text)
+        return [f"{p}={v:g}" for p, v in _arg_numbers(args) if v != 0 and round(abs(v), 4) not in allowed]
     diffs = {round(abs(a - b), 4) for a in allowed for b in allowed}
     percents = {round(float(n), 4) for n, _ in _PERCENT.findall(user_text or "")}
     percent_only = percents - numbers_in(_PERCENT.sub(" ", user_text or ""))
@@ -86,18 +91,29 @@ def ungrounded_values(args: dict, user_text: str, tool: str | None = None) -> li
 
 
 _RATE_ARGS = {"loan_emi": ("annual_rate_pct",), "tvm": ("annual_rate_pct",), "sip_future_value": ("annual_return_pct",),
-              "goal_saving": ("annual_return_pct",)}
+              "goal_saving": ("annual_return_pct",), "equivalent_annual_cost": ("rate_pct",)}
 _ZERO_RATE_STATED = re.compile(r"(?i)(?<![\d.])0(\.0+)?\s*(%|per ?cent)|\bzero\b|interest[- ]free|\bno interest\b|"
                                r"without (any )?interest|\b0 interest\b")
 
 
+_NO_RUNNING_COST = re.compile(r"(?i)\bno (annual |yearly |operating |running |maintenance )*costs?\b|\bzero\b|"
+                              r"\bcosts? nothing to (run|operate)\b")
+
+
 def invented_zero_rates(tool: str, args: dict, user_text: str) -> list[str]:
-    """A small model fills an unknown rate with 0. A 0% rate is only accepted if the question says so."""
+    """A small model fills an unknown rate with 0. A 0% rate is only accepted if the question says so. For
+    equivalent_annual_cost the same holds for a zero running cost when no electricity figures are given."""
     if tool == "tvm" and args.get("solve_for") == "annual_rate_pct":   # the rate is the unknown and is ignored
         return []
-    zeros = [k for k in _RATE_ARGS.get(tool, ()) if isinstance(args.get(k), (int, float)) and not isinstance(args.get(k), bool)
-             and args[k] == 0]
-    return [] if not zeros or _ZERO_RATE_STATED.search(user_text or "") else zeros
+
+    def zero(k):
+        return isinstance(args.get(k), (int, float)) and not isinstance(args.get(k), bool) and args[k] == 0
+    zeros = [k for k in _RATE_ARGS.get(tool, ()) if zero(k)]
+    zeros = [] if not zeros or _ZERO_RATE_STATED.search(user_text or "") else zeros
+    if tool == "equivalent_annual_cost" and zero("annual_cost") and not args.get("power_watts") \
+            and not _NO_RUNNING_COST.search(user_text or ""):
+        zeros.append("annual_cost")
+    return zeros
 
 
 def _argument_error(name: str, exc: Exception) -> str:
@@ -115,6 +131,13 @@ def _argument_error(name: str, exc: Exception) -> str:
 _SOLVER_ADVICE = (" For solve_financials, pass each figure exactly as the question states it under its name; percent items (*_pct) "
                   "take the percent number (23 percent -> 23) and ratios are plain numbers (.84 -> 0.84). Never compute an input "
                   "yourself: put the item you need in targets.")
+_EAC_ADVICE = ("For electricity, pass power_watts, hours_per_year, price_per_kwh and lifetime_hours exactly as the question gives "
+               "them and leave out annual_cost and life_years; the tool works them out. Compute any other figure the question does "
+               "not state with calculate first and pass its exact result. Costs are positive numbers.")
+
+
+def _is_error(content) -> bool:
+    return str(content).lstrip().startswith('{"error"')
 
 
 class State(TypedDict, total=False):
@@ -199,17 +222,28 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
 
     def tools(state: State) -> dict:
         """Run tool calls. Statement tools must only use figures from the user's message (SPEC 3.1)."""
-        user_text = text_of(state["messages"][state["question_idx"]])
+        qi = state["question_idx"]
+        user_text = text_of(state["messages"][qi])
+        # results of this turn's earlier successful tool calls (an EAC input may be a calculate result)
+        results = [str(m.content) for m in state["messages"][qi + 1:] if isinstance(m, ToolMessage) and not _is_error(m.content)]
         out = []
         style = MONEY_STYLE.set(state.get("flags", {}).get("currency", "INR"))   # $ questions get $ formatting
         for tc in state["messages"][-1].tool_calls:
-            bad = ungrounded_values(tc["args"], user_text, tc["name"]) if tc["name"] in GROUNDED_TOOLS else []
+            bad = (ungrounded_values(tc["args"], user_text, tc["name"], "\n".join(results))
+                   if tc["name"] in GROUNDED_TOOLS else [])
             zero_rates = invented_zero_rates(tc["name"], tc["args"], user_text)
-            if bad:
+            if bad and tc["name"] == "equivalent_annual_cost":
+                content = json.dumps({"error": f"These values are not in the question or in an earlier tool result: {', '.join(bad)}. "
+                                      + _EAC_ADVICE}, ensure_ascii=False)
+            elif bad:
                 content = json.dumps({"error": f"These values are not in the user's data: {', '.join(bad)}. Pass only figures "
                                       "that appear in the data, exactly as given. Leave out items that are not given, and give "
                                       "opening and closing balances instead of computing changes yourself."
                                       + (_SOLVER_ADVICE if tc["name"] == "solve_financials" else "")}, ensure_ascii=False)
+            elif zero_rates == ["annual_cost"]:
+                content = json.dumps({"error": "annual_cost=0 is not in the question. Give the yearly running cost, or for "
+                                      "electricity pass power_watts, hours_per_year, price_per_kwh and lifetime_hours exactly as "
+                                      "the question gives them; the tool works out the yearly cost and the life."})
             elif zero_rates:
                 content = json.dumps({"error": f"{', '.join(f'{k}=0' for k in zero_rates)} is not in the question: a 0% rate is only "
                                       "valid if the question says so. If the rate is what you need to find, leave it out: loan_emi "
@@ -222,6 +256,8 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
                 except Exception as exc:  # invalid arguments: tell the model so it can retry
                     content = json.dumps({"error": _argument_error(tc["name"], exc)}, ensure_ascii=False)
             out.append(ToolMessage(content=content, tool_call_id=tc["id"], name=tc["name"]))
+            if not _is_error(content):
+                results.append(str(content))
         MONEY_STYLE.reset(style)
         return {"messages": out}
 

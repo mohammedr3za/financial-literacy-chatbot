@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 
 from . import calculators as C
 from . import financial_solver as F
+from . import income_tax as T
 from . import statements as S
 from .math_engine import calculate as _calculate
 from .math_engine import solve_equation as _solve_equation
@@ -77,6 +78,29 @@ def npv_irr(cashflows: list[float], discount_rate_pct: float | None = None) -> s
         discount_rate_pct: Optional discount rate in percent for NPV, e.g. 10.
     """
     return _run(C.npv_irr, cashflows=cashflows, discount_rate_pct=discount_rate_pct)
+
+
+@tool(parse_docstring=True)
+def equivalent_annual_cost(purchase_cost: float, rate_pct: float, annual_cost: float | None = None,
+                           life_years: float | None = None, salvage: float = 0.0, power_watts: float | None = None,
+                           hours_per_year: float | None = None, price_per_kwh: float | None = None,
+                           lifetime_hours: float | None = None) -> str:
+    """Equivalent annual cost (EAC, equivalent annual annuity) of something bought now and run at a level yearly cost, e.g. a machine or a light bulb. Call it once per option. Pass costs as positive numbers; the tool returns the yearly cost, the life, the PV of costs, the annuity factor and the EAC (negative: a cost), with a year-by-year table. For electricity, pass power_watts, hours_per_year, price_per_kwh and lifetime_hours exactly as the question gives them instead of annual_cost and life_years; the tool works them out. Never write out the yearly cash flows yourself.
+
+    Args:
+        purchase_cost: Price paid today, e.g. 3.00.
+        rate_pct: Required return or discount rate in percent, e.g. 10.
+        annual_cost: Running cost per year, if the question states it. Leave out when you give the electricity figures.
+        life_years: Life in whole years, if the question states it. Leave out when you give lifetime_hours.
+        salvage: Resale value at the end of the life, only if the question gives one. Default 0.
+        power_watts: Electricity: the power in watts, e.g. 60 for a 60-watt bulb.
+        hours_per_year: Hours used per year, e.g. 500.
+        price_per_kwh: Price of one kilowatt-hour, e.g. 0.113.
+        lifetime_hours: Total life in hours, e.g. 12000; the life in years is lifetime_hours ÷ hours_per_year.
+    """
+    return _run(C.equivalent_annual_cost, purchase_cost=purchase_cost, annual_cost=annual_cost, life_years=life_years,
+                rate_pct=rate_pct, salvage=salvage, power_watts=power_watts, hours_per_year=hours_per_year,
+                price_per_kwh=price_per_kwh, lifetime_hours=lifetime_hours)
 
 
 @tool(parse_docstring=True)
@@ -230,7 +254,7 @@ class BalanceSheetArgs(_Strict):
 
 @tool(args_schema=BalanceSheetArgs)
 def balance_sheet_check(assets: dict, liabilities: dict, equity: dict) -> str:
-    """Check whether a balance sheet balances, with section totals and a common-size view (% of total assets)."""
+    """Check whether a balance sheet balances, with section totals and a common-size view (% of total assets). If the question asks for total equity (or total liabilities), pass that section as {}: it is derived as the balancing figure."""
     return _run(S.balance_sheet_check, assets=assets, liabilities=liabilities, equity=equity)
 
 
@@ -270,13 +294,15 @@ class _SolverBase(_Strict):
     def _names(cls, data):
         if not isinstance(data, dict):
             return data
-        data = {k: v for k, v in data.items() if v is not None}
-        F.check_names([k for k in data if k != "targets"])
-        if isinstance(data.get("targets"), str):
-            data["targets"] = [data["targets"]]
-        if isinstance(data.get("targets"), list):
-            F.check_names(data["targets"], "target")
-        return data
+        targets = data.get("targets")
+        data = F.canonical({k: v for k, v in data.items() if v is not None and k != "targets"})   # interest_expense -> interest
+        F.check_names(list(data))
+        if isinstance(targets, str):
+            targets = [targets]
+        if isinstance(targets, list):
+            targets = list(dict.fromkeys(F.resolve(t) for t in targets))
+            F.check_names(targets, "target")
+        return {**data, "targets": targets} if targets is not None else data
 
 
 SolveFinancialsArgs = create_model(
@@ -292,6 +318,48 @@ def solve_financials(targets: list[str], **items) -> str:
     return _run(F.solve_financials, targets=targets, **{k: v for k, v in items.items() if v is not None})
 
 
-CALC_TOOLS = [loan_emi, sip_future_value, goal_saving, tvm, real_return, effective_annual_rate, npv_irr, bond_metrics,
-              black_scholes, calculate, solve_equation, solve_financials, financial_ratios, balance_sheet_check, cash_flow_statement]
+@tool(parse_docstring=True)
+def income_tax(financial_year: str = "2026-27", regime: Literal["both", "new", "old"] = "both",
+               gross_salary: float = 0, gross_salary_monthly: float = 0, hra_received: float = 0,
+               hra_received_monthly: float = 0, basic_da: float = 0, basic_da_monthly: float = 0, rent_paid: float = 0,
+               rent_paid_monthly: float = 0, city: str = "", age: int = 30, other_income: float = 0,
+               section_80c: float = 0, health_insurance_self: float = 0, health_insurance_parents: float = 0,
+               nps_80ccd1b: float = 0, home_loan_interest: float = 0, professional_tax: float = 0,
+               employer_nps: float = 0) -> str:
+    """Indian income tax for a resident salaried person, new vs old regime: slabs, standard deduction, 87A rebate with marginal relief, surcharge, 4% cess, HRA exemption and old-regime deductions. Pass only figures the user gave, as stated: yearly amounts in the plain fields, per-month amounts in the *_monthly fields (the tool multiplies by 12). Leave out anything not given; the tool lists what is missing for the old-regime HRA exemption.
+
+    Args:
+        financial_year: '2026-27' (current, default) or '2025-26' if the user names that year or AY 2026-27.
+        regime: 'both' to compare (default), or 'new' / 'old' if the user chose one.
+        gross_salary: Yearly gross salary incl. HRA and allowances, plain rupees (30 lakh = 3000000).
+        gross_salary_monthly: Monthly gross salary, if given per month instead.
+        hra_received: HRA received per year.
+        hra_received_monthly: HRA received per month.
+        basic_da: Basic salary + DA per year (needed for the HRA exemption).
+        basic_da_monthly: Basic salary + DA per month.
+        rent_paid: Rent actually paid per year.
+        rent_paid_monthly: Rent actually paid per month.
+        city: City of the rented home, e.g. 'Mumbai' (metro cities get 50% instead of 40%).
+        age: Age in years, only if the user gave it (60+ and 80+ have higher old-regime exemptions).
+        other_income: Other taxable income per year (interest etc.), only if given.
+        section_80c: 80C investments (PF, PPF, ELSS, LIC...) per year, old regime only.
+        health_insurance_self: 80D premium for self and family per year.
+        health_insurance_parents: 80D premium for parents per year.
+        nps_80ccd1b: Own NPS contribution under 80CCD(1B) per year.
+        home_loan_interest: Interest on a self-occupied home loan per year (24(b)).
+        professional_tax: Professional tax paid per year.
+        employer_nps: Employer NPS contribution per year (80CCD(2)).
+    """
+    return _run(T.income_tax, financial_year=financial_year, regime=regime, gross_salary=gross_salary,
+                gross_salary_monthly=gross_salary_monthly, hra_received=hra_received,
+                hra_received_monthly=hra_received_monthly, basic_da=basic_da, basic_da_monthly=basic_da_monthly,
+                rent_paid=rent_paid, rent_paid_monthly=rent_paid_monthly, city=city, age=age, other_income=other_income,
+                section_80c=section_80c, health_insurance_self=health_insurance_self,
+                health_insurance_parents=health_insurance_parents, nps_80ccd1b=nps_80ccd1b,
+                home_loan_interest=home_loan_interest, professional_tax=professional_tax, employer_nps=employer_nps)
+
+
+CALC_TOOLS = [loan_emi, sip_future_value, goal_saving, tvm, real_return, effective_annual_rate, npv_irr, equivalent_annual_cost,
+              bond_metrics, black_scholes, calculate, solve_equation, solve_financials, financial_ratios, balance_sheet_check,
+              cash_flow_statement, income_tax]
 TOOLS_BY_NAME = {t.name: t for t in CALC_TOOLS}

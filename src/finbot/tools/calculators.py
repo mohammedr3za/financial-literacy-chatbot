@@ -320,6 +320,77 @@ def npv_irr(cashflows: list[float], discount_rate_pct: float | None = None) -> d
     return out
 
 
+# ---------------------------------------------------------------- equivalent annual cost
+def _given(v) -> bool:
+    return v is not None and v != 0
+
+
+def equivalent_annual_cost(purchase_cost: float, annual_cost: float | None = None, life_years: float | None = None,
+                           rate_pct: float | None = None, salvage: float = 0.0, power_watts: float | None = None,
+                           hours_per_year: float | None = None, price_per_kwh: float | None = None,
+                           lifetime_hours: float | None = None) -> dict:
+    """EAC of an asset bought now and run at a level yearly cost (paid at each year end) for a whole number of years.
+    Costs are magnitudes; following the textbook, they are shown as negative cash flows, so the EAC is negative.
+    For electricity, power_watts, hours_per_year and price_per_kwh give the yearly cost and lifetime_hours ÷ hours_per_year
+    the life, so the model only copies figures from the question. A zero means "not given"."""
+    _require(rate_pct is not None and rate_pct > -100, "rate_pct must be given and above -100 (e.g. 10 for 10%).")
+    _require(salvage is None or salvage >= 0, "salvage must be zero or positive (the resale value at the end of the life).")
+    working = []
+    usage = {"power_watts": power_watts, "hours_per_year": hours_per_year, "price_per_kwh": price_per_kwh}
+    if any(_given(usage[k]) for k in ("power_watts", "price_per_kwh")):
+        missing = [k for k, v in usage.items() if not _given(v)]
+        _require(not missing, f"For an electricity cost give power_watts, hours_per_year and price_per_kwh; missing: {', '.join(missing)}.")
+        derived_cost = abs(power_watts) / 1000 * abs(hours_per_year) * abs(price_per_kwh)
+        working.append(f"Yearly running cost = {group(abs(power_watts), 2).removesuffix('.00')} ÷ 1000 × "
+                       f"{group(abs(hours_per_year), 2).removesuffix('.00')} × {abs(price_per_kwh):g} = {derived_cost:.6g}")
+        if _given(annual_cost):
+            _require(abs(abs(annual_cost) - derived_cost) <= 0.005 * derived_cost,
+                     f"annual_cost={annual_cost:g} does not match power_watts ÷ 1000 × hours_per_year × price_per_kwh = "
+                     f"{derived_cost:.6g}. Pass one or the other.")
+        annual_cost = derived_cost
+    _require(_given(annual_cost), "annual_cost (the yearly running cost) is missing. Give it, or for electricity give "
+                                  "power_watts, hours_per_year and price_per_kwh from the question.")
+    if _given(lifetime_hours) and not _given(life_years):
+        _require(_given(hours_per_year), "To get the life from lifetime_hours, also give hours_per_year.")
+        life_years = abs(lifetime_hours) / abs(hours_per_year)
+        working.append(f"Life = {group(abs(lifetime_hours))} ÷ {group(abs(hours_per_year))} = {life_years:g} years")
+    _require(_given(life_years) and life_years > 0, "life_years is missing. Give it, or lifetime_hours and hours_per_year "
+                                                    "(e.g. 12,000 hours ÷ 500 hours a year = 24 years).")
+    _require(abs(life_years - round(life_years)) < 1e-9, f"life_years must be a whole number of years (got {life_years:g}).")
+    purchase, yearly, n, r = abs(float(purchase_cost)), abs(float(annual_cost)), int(round(life_years)), rate_pct / 100
+    salvage = float(salvage or 0.0)
+    annuity_factor = float(n) if r == 0 else (1 - (1 + r) ** -n) / r
+    flows = [-purchase] + [-yearly] * n
+    flows[-1] += salvage
+    pv = sum(c / (1 + r) ** t for t, c in enumerate(flows))
+    eac = pv / annuity_factor
+    body, cum = [], 0.0
+    for t, c in enumerate(flows):
+        df = 1 / (1 + r) ** t
+        cum += c * df
+        body.append([str(t), group(c, 2), f"{df:.4f}", group(c * df, 2), group(cum, 2)])
+    note = " ".join(w + "." for w in working)
+    minus = lambda v: f"{v:,.4f}".replace("-", "−")  # noqa: E731
+    note += (f" EAC = PV of costs ÷ annuity factor = {minus(pv)} ÷ {annuity_factor:.4f} = {minus(eac)} "
+             "(costs are negative).")
+    table = make_table(f"Equivalent annual cost ({symbol()}, discounted at {rate_pct:g}%)",
+                       ["Year", "Cash flow", "Discount factor", "Present value", "Cumulative PV"], body,
+                       total=["Total", group(sum(flows), 2), "", group(pv, 2), ""], note=note.strip())
+    inputs = {"purchase_cost": purchase, "annual_cost": yearly, "life_years": n, "rate_pct": rate_pct, "salvage": salvage}
+    inputs.update({k: v for k, v in (("power_watts", power_watts), ("hours_per_year", hours_per_year),
+                                     ("price_per_kwh", price_per_kwh), ("lifetime_hours", lifetime_hours)) if _given(v)})
+    out = _out(inputs,
+               "PV of costs = −purchase − annual cost × annuity factor + salvage ÷ (1+r)^n ; "
+               "annuity factor = (1 − (1+r)^−n) ÷ r ; EAC = PV of costs ÷ annuity factor (costs negative)",
+               {"annual_cost": round(yearly, 6), "life_years": n, "pv_of_costs": round(pv, 4),
+                "annuity_factor": round(annuity_factor, 6), "eac": round(eac, 4)},
+               ("pv_of_costs", "eac"))
+    if working:
+        out["working"] = working
+    out["table"] = table
+    return out
+
+
 # ---------------------------------------------------------------- bonds
 def _bond_price_dur(face, coupon_pct, n_periods, freq, y):
     c = face * coupon_pct / 100 / freq

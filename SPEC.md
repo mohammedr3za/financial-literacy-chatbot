@@ -49,7 +49,9 @@ START → precheck → retrieve → agent ⇄ tools → review → present → E
   - A turn is limited to 6 tool iterations.
 - **tools** runs the deterministic Python tools in section 4. For the three statement tools it first checks **input grounding**: every number in the arguments must appear in the user's message (as written, or as a lakh/crore conversion shown by precheck). A call with an invented figure is not run; the model gets an error naming the figure and retries. Zero values count as not given. One exception: a working-capital change is accepted if it exactly equals the difference of two figures in the message (the guard verifies the subtraction).
   - `solve_financials` is grounded the same way, with unit checks: a `*_pct` item takes the percent number ("23 percent" → 23; ".23" → 23), and a ratio is a plain number (".84" → 0.84; a "40 percent" debt ratio → 0.4). "$4.5 million" counts as 4500000, and numbers sent as strings are checked too.
-  - **Invented zero rates:** for `loan_emi`, `tvm`, `sip_future_value` and `goal_saving`, a rate of 0 is sent back as an error unless the question says 0%, zero, interest-free or no interest. A small model fills an unknown rate with 0 (the sailboat APR question).
+  - `equivalent_annual_cost` is grounded too. Each figure must appear in the user's message or in the result of an earlier tool call in the same turn. Electricity figures (watts, hours a year, price per kWh, lifetime hours) are copied from the question, and the tool derives the yearly cost and the life. Any other derived figure is computed with `calculate` first and never in the model's head. There is no exception for quotients: a live run passed 12,000 ÷ 1,000 = 12 years instead of 12,000 ÷ 500 = 24.
+  - **Invented zero rates:** for `loan_emi`, `tvm`, `sip_future_value`, `goal_saving` and `equivalent_annual_cost`, a rate of 0 is sent back as an error unless the question says 0%, zero, interest-free or no interest. A small model fills an unknown rate with 0 (the sailboat APR question).
+  - The same applies to an `equivalent_annual_cost` running cost of 0 when no electricity figures are given, unless the question says there is no running cost. A live LED run passed `annual_cost=0` for both bulbs.
 - **review** is deterministic. It checks the final answer for:
   1. guarantee language, such as "guaranteed returns" or "will definitely";
   2. a calculation question answered with numbers but no tool call;
@@ -61,6 +63,9 @@ START → precheck → retrieve → agent ⇄ tools → review → present → E
   8. a website outside the official allowlist (SEBI, RBI, Income Tax, AMFI, DICGC, SCORES, IRDAI, PFRDA, NSE, BSE, NSDL, CDSL) or the provided sources;
   9. on Indian rule or tax questions, a percentage or rupee amount that appears in none of: the sources, the question, or a calculator result;
   10. an answer that names an internal tool (`loan_emi`, `calculate(`, `solve_financials`, ...) or narrates a call ("the function was called"). The note says: give the result in plain words; do not describe tool calls.
+  11. shown working that does not add up. Every fully numeric expression in the answer is evaluated with the safe `calculate` engine. This covers LaTeX (`\frac`, `\times`, `\cdot`, `%`, `{,}` and thin-space separators) and plain text (×, ÷, *, /, +, −). Each value must equal a figure the answer states, within display rounding (0.5%, or more when the operands shown are rounded).
+      - Skipped: expressions joined to words or units ("× PVIFA", "500 hours ×"), ranges, dates, plain-text integer fractions such as 24/7 that are not followed by "=", a percentage added to an amount, and anything the engine cannot parse.
+      - The note gives the working, what it evaluates to and what the answer states. Example: a live Y3K answer showed the right DuPont formula but stated the result of a different calculator expression (22,255.71 instead of 123.64).
 
   For calculation answers, a figure that is not in the evidence may still pass if the checker recomputes it as one step (+ − × ÷) from two numbers the answer itself shows and that are verified, or from 1, 12, 100 or 365. A bare result such as a wrong PI of 1.153 no longer passes.
 
@@ -82,6 +87,7 @@ Every tool is a pure Python function. It returns JSON containing `inputs`, `form
 | `loan_emi(principal, annual_rate_pct, months, emi)` | Takes exactly three of the four and solves the missing one: the EMI; the rate (monthly rate by bisection, APR = monthly rate × 12, plus the effective annual rate); the months (rounded up, with a smaller final payment and the exact fractional months); or the principal (present value of the payments). Returns total payment, total interest, the first-year principal and interest split, and the year-wise schedule. The schema is strict. |
 | `sip_future_value(monthly, annual_return_pct, years, step_up_pct=0)` | Payment at the start of each month, compounded monthly, with an optional annual step-up. Returns the corpus, amount invested, and gain. |
 | `npv_irr(cashflows, discount_rate_pct=None)` | Returns NPV (when a rate is given) and IRR, using Newton's method with a bisection fallback. With a rate it also returns the profitability index (PV of later flows ÷ initial investment), the PV of future cash flows, the annuity factor, and the equivalent annual amount (NPV ÷ annuity factor; the EAC when the flows are costs). |
+| `equivalent_annual_cost(purchase_cost, annual_cost, life_years, rate_pct, salvage=0, power_watts, hours_per_year, price_per_kwh, lifetime_hours)` | EAC of an asset bought now and run at a level yearly cost for a whole number of years. Costs are passed as positive amounts. For electricity, the four optional usage figures can replace `annual_cost` and `life_years`: yearly cost = watts ÷ 1000 × hours a year × price per kWh, and life = lifetime hours ÷ hours a year. The working is returned, a non-whole life is an error, and an `annual_cost` that disagrees with the usage figures is an error. Following the textbook convention, costs come back negative: PV of costs = −purchase − annual cost × annuity factor + salvage ÷ (1+r)^n, annuity factor = (1 − (1+r)^−n) ÷ r, and EAC = PV of costs ÷ annuity factor. Returns the PV of costs, the annuity factor and the EAC, plus a year-by-year table. Example: a $0.37 bulb costing $3.39 a year for 2 years at 10% gives −3.6032. It replaces the 25-element cash-flow lists the model used to write for `npv_irr` (a live LED question hit the 700-token output cap). |
 | `bond_metrics(face, coupon_pct, years, freq, ytm_pct=None, price=None)` | Takes exactly one of `ytm_pct` or `price`, and returns price or YTM plus Macaulay and modified duration. |
 | `black_scholes(spot, strike, years, rate_pct, vol_pct, kind)` | European call or put price with delta, gamma, vega, theta, and rho. |
 
@@ -90,7 +96,7 @@ Every tool is a pure Python function. It returns JSON containing `inputs`, `form
   - `goal_saving(target, years, annual_return_pct, current_savings=0, step_up_pct=0)` gives the monthly SIP needed to reach a target. It verifies itself by recomputing the target from the answer.
   - `real_return(nominal_pct, inflation_pct)` gives the real return.
   - `effective_annual_rate(nominal_pct, periods_per_year)` gives the effective annual rate.
-- **Question-type router (deterministic):** precheck detects common types and names the required tool in the pre-check notes, with how to map the numbers. Types: goal saving, loan EMI, loan (rate, months or affordable principal: borrow/loan/mortgage with payment, instalment, EMI, APR or afford wording), SIP future value, lump-sum growth, present value, CAGR, years to double or reach a goal, real return, effective rate, NPV/IRR (including profitability index and equivalent annual cost), bond, option, GST and percentages, and statements. Statement questions (statement items or ratios given, another item asked) must call `solve_financials` first.
+- **Question-type router (deterministic):** precheck detects common types and names the required tool in the pre-check notes, with how to map the numbers. Types: goal saving, loan EMI, loan (rate, months or affordable principal: borrow/loan/mortgage with payment, instalment, EMI, APR or afford wording), SIP future value, lump-sum growth, present value, CAGR, years to double or reach a goal, real return, effective rate, NPV/IRR (including profitability index), equivalent annual cost ("equivalent annual cost", "EAC", "equivalent annual annuity", "EAA": `equivalent_annual_cost`, or `npv_irr` when the yearly cash flows are uneven), bond, option, GST and percentages, and statements. Statement questions (statement items or ratios given, another item asked) must call `solve_financials` first. A statement question does not also get the plain-percentage route: "85 percent of sales are on credit" is a statement input, and the statement tools include `calculate`.
 - **Routing enforcement:** if a detected type is answered without one of its required tools, review fails with a note naming the right tool.
 - **No unsourced figures in calculations:** for calculation answers, every rupee amount and percentage must match the question or a tool output within 0.5% (for rounding). Otherwise review fails. Mental arithmetic, such as the Rule of 72, is not allowed.
 
@@ -98,8 +104,8 @@ Every tool is a pure Python function. It returns JSON containing `inputs`, `form
 | Tool | Contract |
 |---|---|
 | `financial_ratios(...)` | Takes any subset of named statement items (current assets and liabilities, inventory, cash, receivables, payables, total assets, liabilities, equity, debt, revenue, COGS, gross profit, EBIT, interest, net income, operating cash flow, capex, depreciation). Computes every ratio those items allow: liquidity, leverage, profitability, efficiency, cash, and a DuPont check. Each ratio comes with its formula. |
-| `balance_sheet_check(assets, liabilities, equity)` | Takes items and amounts per section. Returns section totals, whether assets equal liabilities plus equity (and the difference if not), and a common-size % of total assets. |
-| `solve_financials(<named figures>, targets)` | Deterministic solver over a fixed library of textbook identities (Ross, Westerfield & Jordan): income statement (EBIT, EBT, taxes, net income, EBITDA, OCF, addition to retained earnings), liquidity, turnover and days' sales, leverage (debt ratio, D/E, equity multiplier, long-term debt ratio, TIE, cash coverage), profitability, DuPont, payout and retention, sustainable and internal growth, and market value (EPS, P/E, market cap, BVPS, market-to-book, price-sales, EV, EV/EBITDA). The model passes every figure the question gives under its canonical name plus the items asked for. The tool repeatedly solves an identity with exactly one unknown (SymPy, exact rationals) and returns each step (formula, substituted numbers, value), the targets, a derivation table, and warnings for inputs that conflict by more than 0.5% or for impossible negatives. For a target it cannot reach, it names the formulas and the figures still unknown. Unknown names are rejected with suggestions. Formulas come only from the code. |
+| `balance_sheet_check(assets, liabilities, equity)` | Takes items and amounts per section. Returns section totals, whether assets equal liabilities plus equity (and the difference if not), and a common-size % of total assets. If exactly one of the liabilities or equity sections is missing, or all its amounts are zero (the model's way of marking the unknown), that section is derived as the balancing figure: equity = assets − liabilities, or liabilities = assets − equity. It is labelled "(derived)" and no imbalance is reported. |
+| `solve_financials(<named figures>, targets)` | Deterministic solver over a fixed library of textbook identities (Ross, Westerfield & Jordan): income statement (EBIT, EBT, taxes, net income, EBITDA, OCF, addition to retained earnings, and net income = EBT × (1 − tax rate) so EBT can be worked back from net income), liquidity, turnover and days' sales (with credit sales: when `credit_sales` or `credit_sales_pct` is given, receivables turnover = credit sales ÷ receivables and credit sales = sales × credit_sales_pct ÷ 100; otherwise receivables turnover = sales ÷ receivables; only one definition is active in a call, so the two never conflict), leverage (debt ratio, D/E, equity multiplier, long-term debt ratio, TIE, cash coverage), profitability, DuPont, payout and retention, sustainable and internal growth, and market value (EPS, P/E, market cap, BVPS, market-to-book, price-sales, EV, EV/EBITDA). The model passes every figure the question gives under its canonical name plus the items asked for. The tool repeatedly solves an identity with exactly one unknown (SymPy, exact rationals) and returns each step (formula, substituted numbers, value), the targets, a derivation table, and warnings for inputs that conflict by more than 0.5% or for impossible negatives. For a target it cannot reach, it names the formulas and the figures still unknown. Common alternative names (`interest_expense`, `revenue`, `tax_rate`, `net_profit`, …) are mapped to the canonical names, and the unit checks apply under either name. Other unknown names are rejected with suggestions. Formulas come only from the code. |
 | `cash_flow_statement(net_income, non_cash_items, working_capital, investing, financing, opening_cash, closing_cash)` | Indirect method. Each working-capital item gives `type` (current_asset or current_liability) and either `change` or `opening` and `closing`. The tool applies the sign rules. Returns CFO, CFI, CFF, net change, closing cash, and a reconciliation against a given closing cash. |
 
 ### 4.2 Tables
@@ -108,12 +114,37 @@ Every tool is a pure Python function. It returns JSON containing `inputs`, `form
   - `sip_future_value`: a year-by-year view (monthly amount, invested in the year, total invested, value at year end, gain);
   - `tvm`: year-by-year growth for future-value, present-value and deposit solves;
   - `npv_irr`: year, cash flow, discount factor, present value, cumulative present value;
+  - `equivalent_annual_cost`: year, cash flow (costs negative), discount factor, present value, cumulative present value, with a total row;
   - `bond_metrics`: period, cash flow, discount factor, present value, and time-weighted present value (the duration table);
   - `black_scholes`: the Greeks;
   - all three statement tools.
 - A deterministic `present` step after `review` appends each tool table to the final answer as a markdown table, so the CLI, the benchmark log and the app all show the same exact table. Tables are capped at 60 rows.
 - The prompt tells the model not to copy tool tables, and to use a compact markdown table whenever it compares options or lists figures itself.
 - Because tables render below the answer, "the table above" (or "the above table") in the answer is rewritten to "the table below" when a tool table is attached.
+
+### 4.3 Income tax for salaried individuals (user report, 2026-10-16)
+- `income_tax` (`tools/income_tax.py`) computes Indian income tax for a resident salaried individual, new vs old regime.
+  - FY 2025-26 (AY 2026-27, Income-tax Act 1961).
+  - FY 2026-27 (tax year 2026-27, Income-tax Act 2025): the same slabs (s.202), rebate (s.156) and standard deduction (s.19).
+  - HRA's 50% rate covers 8 cities from FY 2026-27 (Income-tax Rules 2026), and 4 before.
+- New regime:
+  - Slabs: 0% up to ₹4 lakh, 5% to 8 lakh, 10% to 12 lakh, 15% to 16 lakh, 20% to 20 lakh, 25% to 24 lakh, 30% above.
+  - Standard deduction ₹75,000.
+  - Rebate up to ₹60,000 when income is ₹12 lakh or less, with marginal relief just above.
+  - Surcharge 10 / 15 / 25% above ₹50 lakh, 1 crore and 2 crore, with marginal relief.
+  - Employer NPS deduction up to 14% of basic + DA.
+- Old regime:
+  - Slabs by age (below 60, 60–79, 80+).
+  - Standard deduction ₹50,000; rebate ₹12,500 when income is ₹5 lakh or less.
+  - HRA exemption: the least of actual HRA, rent paid minus 10% of basic + DA, and 50% (metro) or 40% of basic + DA.
+  - Deductions: 80C ₹1.5 lakh; 80D ₹25,000, or ₹50,000 for a senior; 80CCD(1B) ₹50,000; home-loan interest under 24(b) ₹2 lakh; professional tax ₹2,500.
+  - Surcharge up to 37%.
+- Cess is 4% in both regimes.
+- Output: both regimes, the lower one, a comparison table, missing inputs (rent, basic + DA, city for HRA) and official source links.
+- Out of scope: special-rate income (capital gains, crypto). The tool says so instead of guessing.
+- Monthly inputs (`*_monthly`) are multiplied by 12 in the tool, never by the model.
+- `income_tax` is a grounded tool: every number passed must appear in the question.
+- Routing: an income-tax question in an Indian salary context ("income tax", "how much tax", "old/new regime" with salary, lakh, ₹ or HRA) requires `income_tax`.
 
 ## 5. Trust policy (system prompt), mapped to the rubric
 1. **Accuracy:** Every number in an answer comes from a tool, and the answer shows the inputs used.
@@ -171,7 +202,7 @@ The bot never asks for personal or account details, and it replies in the user's
 visitor's phone → Vercel (static page + /api/chat proxy with secret token) → HTTPS tunnel → FastAPI on the A100 → FinBot graph → vLLM
 ```
 - **Backend:** `src/finbot/api.py` (FastAPI) runs the same graph.
-  - Endpoints: `POST /api/chat`, which streams step events and then the full trace as Server-Sent Events, and `GET /api/health`.
+  - Endpoints: `POST /api/chat`, which streams step events and then the full trace as Server-Sent Events, and `GET /api/health`, which returns `{status, host, model}`: `host` is `cloud` (vLLM) or `local` (Ollama), and the site shows it as a small badge at the top of the page (a green dot and "Lambda" or "Local").
   - Every request needs the `FINBOT_API_TOKEN` bearer token.
   - Limits: about 10 requests per minute per visitor, 4,000 characters per question, 25 turns per conversation, and attachments of 200 KB or less.
 - **Exposure:** the API listens on localhost on the A100, and a Cloudflare tunnel gives it an HTTPS address. No ports are opened on the instance.
@@ -190,6 +221,18 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
 - Limits: the same per-visitor rate limit as chat, and only answers from the last 25 turns of a live conversation can be reported.
 - **Per-report cap: 2 MB** (`FINBOT_REPORT_MAX_BYTES`). A larger report is trimmed, not refused: it drops the oldest turns first, then tool outputs, then shortens long answers. It is marked `"trimmed": true`, and the reported answer is always kept.
 - **Storage cap for all reports combined: 5 GB** (`FINBOT_REPORTS_MAX_BYTES`, default 5 GiB). A report that would push `reports.jsonl` past the cap is refused, and no further reports are accepted. The API returns HTTP 507 with "Report storage is full, so reports are paused." Saved reports are never deleted or truncated automatically.
+
+### 7.4 Conversation log for future training (user request, 2026-10-16)
+- Every answered turn on the API, including errors, is appended to `results/chatlog/YYYY-MM-DD.md` (git-ignored; never committed, as it is fine-tune data). `FINBOT_CHATLOG_DIR` moves it, and `FINBOT_CHATLOG=0` turns it off.
+- Each entry stores:
+  - a heading (time, conversation hash, turn, model, latency, review outcome) and an HTML-comment JSON `meta` line (flags, review codes, revisions);
+  - the question as the model saw it (precheck has already redacted personal data), in a fenced block;
+  - the answer, in a fenced block longer than any backtick run inside it;
+  - each tool call's name and arguments (results are deterministic and recomputable, so they are not stored);
+  - the sources.
+- Not stored: IP addresses or the browser's thread id. A salted SHA-256 prefix links the turns of one conversation.
+- Cap: 2 GiB across all log files (`FINBOT_CHATLOG_MAX_BYTES`). Past the cap, logging stops and answers continue. Logging never breaks an answer.
+- No visitor notice for now: only team members test the site (user decision, 2026-10-16). Add a notice before any public use.
 
 ## 8. Benchmark harness (`bench/`)
 - `questions.yaml` covers 8 base questions × 3 personas (novice, greedy-literate, anxious saver) × 3 framings (neutral, eager, leading). Member 2 owns its content.
@@ -245,3 +288,15 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
 - 2026-10-16: The user clarified: 5 GB is for all reports combined, and each report is limited to a few MB (set to 2 MB, trimmed rather than refused).
 - 2026-10-16: KB rebuilt with 26 documents, 3,934 chunks (was 15 documents, 1,724 chunks), to meet the user's minimum of personal finance, corporate finance and Indian guidelines. Added a `kb/raw/personal/` folder (NCFE, RBI FAME, SEBI securities-market booklet, NPS FAQ, IRDAI handbook), OpenStax *Principles of Accounting Vol 1* (1,702 chunks), and 6 guidelines (Income Tax VDA PDF, Finance Act 2025 highlights, AY 2026-27 salaried page, RBI Digital Lending and KYC Directions). The IRDAI handbook is marked outdated, and RB-IOS 2021 is marked superseded by RB-IOS 2026. Retrieval check went from 10/10 to 9/10: the finfluencer circular fell to rank 6, behind the new SEBI booklet. With `MAX_PER_FILE` lowered from 3 to 2 in `search.py`, the check is 10/10 again, but the circular is at rank 5, outside the 3 chunks the app sends (see PLAN evidence). The old index is backed up outside the repo.
 - 2026-10-16: The user requires that everything calculable goes through tools, with no formula mistakes. Live failures: Tralee COGS (the model invented a ratio formula, −1,124,725 instead of 1,228,200), Nakatomi net income (an invalid `tax_rate_pct` argument), and the sailboat APR (no route, then `loan_emi` with an invented 0% rate and an answer that narrated the tool call). Added `solve_financials` (4.1) as the first tool for statement questions. `loan_emi` now solves for any one unknown. Added the loan route, PI and EAC in `npv_irr` and its route, solver grounding with unit checks, the invented-zero-rate guard, review check 10 (tool narration), stricter one-step recomputation, the table-below rewrite, and an empty-answer fallback (a live LED EAC run ended with only the footer).
+- 2026-10-16: Fixes for six live failures on the McGraw practice set, which stays outside the repo.
+  - Added `equivalent_annual_cost` with its own route and grounding. The LED EAC answer hit the 700-token cap while writing a 25-element `npv_irr` list.
+  - First live run with the new tool: `qwen3:8b` skipped the `calculate` steps and passed `annual_cost=0` and `life_years` 1 and 12. So the tool now takes the electricity figures directly, the quotient exception is gone, and a zero running cost is rejected.
+  - `solve_financials`: added the identity net income = EBT × (1 − t). Frankenson's depreciation was unreachable because both tax identities had two unknowns.
+  - `solve_financials`: added credit sales (`credit_sales`, `credit_sales_pct`), with exactly one receivables-turnover definition active per call (days' sales in receivables with 85% credit sales).
+  - Statement questions no longer also get the plain-percentage route.
+  - `solve_financials` maps common alternative names, with a table plus `*_percent` → `*_pct`. Live runs sent `interest_expense` (Frankenson), `accounts_receivable` (days' sales) and `return_on_equity_pct` (Y3K). Each was rejected, and the model then dropped the figure or did the arithmetic in its head.
+  - `balance_sheet_check` derives a missing equity or liabilities section as the balancing figure. Burrow's answer of 13,560 was right, but the table said "Not balanced … by 13,560".
+  - Review check 11 (shown working must evaluate to a stated figure). The Y3K answer showed the right DuPont formula but stated 22,255.71 from a different calculator expression.
+- 2026-10-16: User request: the site shows a small badge saying whether FinBot is running on the cloud GPU or the local Mac, with the model name. `/api/health` now returns `host` and `model`; the Vercel health function passes them through.
+- 2026-10-16: User request: log every conversation for future training and fine-tuning, in Markdown to keep storage small. Added section 7.4 (redacted questions, answers, tool calls with arguments, sources, review; no IPs or raw thread ids; 2 GiB cap). No visitor notice while only the team tests the site.
+- 2026-10-16: User report: "salary 30 lakhs, HRA 50000 per month, how much tax" was refused because there was no tax calculator. Added section 4.3 `income_tax` (new vs old regime, FY 2025-26 and 2026-27; rules verified against the Finance Act 2025 and its memorandum, incometax.gov.in and the eGazette texts of the 2025 Act and the 2026 Rules), its route, hint, prompt rule 12 and grounding.

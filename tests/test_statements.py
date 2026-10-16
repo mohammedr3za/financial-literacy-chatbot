@@ -83,3 +83,32 @@ def test_working_capital_entry_must_be_change_or_pair():
 def test_zero_items_are_treated_as_not_given():
     r = financial_ratios(ebit=260, depreciation=0, revenue=2400)["result"]
     assert "ebitda" not in r and r["operating_margin_pct"] == 10.8333
+
+
+def test_missing_equity_is_derived_as_the_balancing_figure():
+    # current assets 5,760 + net fixed assets 25,500; current liabilities 5,200 + long-term debt 12,500 -> equity 13,560
+    out = balance_sheet_check(assets={"Current assets": 5_760, "Net fixed assets": 25_500},
+                              liabilities={"Current liabilities": 5_200, "Long-term debt": 12_500},
+                              equity={"Shareholders' equity": 0})
+    r = out["result"]
+    assert r["total_equity"] == 13_560 and r["derived"] == {"total_equity": 13_560}
+    assert r["balanced"] and r["difference"] == 0
+    rows = out["table"]["rows"]
+    assert any(row[1] == "Shareholders' equity (derived)" and row[2] == "13,560" for row in rows)
+    assert "Not balanced" not in out["table"]["note"] and "derived" in out["table"]["note"]
+
+
+def test_missing_section_is_derived_when_empty_and_liabilities_too():
+    eq = balance_sheet_check(assets={"Cash": 100, "Plant": 400}, liabilities={"Loan": 150}, equity={})
+    assert eq["result"]["total_equity"] == 350 and eq["result"]["derived"] == {"total_equity": 350}
+    assert any(row[1] == "Total equity (derived)" for row in eq["table"]["rows"])
+    li = balance_sheet_check(assets={"Cash": 100, "Plant": 400}, liabilities={"Total liabilities": 0}, equity={"Capital": 300})
+    assert li["result"]["total_liabilities"] == 200 and li["result"]["balanced"]
+    assert any(row[1] == "Total liabilities (derived)" for row in li["table"]["rows"])
+
+
+def test_given_sections_are_still_checked_not_derived():
+    r = balance_sheet_check(assets={"Cash": 100}, liabilities={"Loan": 50}, equity={"Capital": 40})["result"]
+    assert not r["balanced"] and r["difference"] == 10 and "derived" not in r
+    both_missing = balance_sheet_check(assets={"Cash": 100}, liabilities={}, equity={})["result"]
+    assert not both_missing["balanced"] and "derived" not in both_missing

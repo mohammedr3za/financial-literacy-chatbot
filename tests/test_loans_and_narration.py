@@ -169,7 +169,7 @@ def test_project_cash_flow_table_routes_to_npv_only():
     f = precheck(q).flags
     assert f["calc_types"] == ["npv_irr"] and not f["statement_data"]
     assert precheck("What is the equivalent annual cost of a $3 bulb that costs $0.85 a year to run for 24 years at 10 percent?"
-                    ).flags["calc_types"] == ["npv_irr"]
+                    ).flags["calc_types"] == ["eac"]          # its own route since 2026-10-16 (SPEC 4.0)
     pasted = "Balance sheet\n| Item | Amount |\n| Cash | 1,20,000 |\n| Inventory | 2,50,000 |\n| Current liabilities | 1,80,000 |"
     assert "statement" in precheck(pasted + "\nCompute the current ratio").flags["calc_types"]
 

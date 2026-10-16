@@ -55,7 +55,10 @@ VARIABLES: dict[str, tuple[str, str, str]] = {
     "cash_ratio": ("ratio", "Cash ratio", "Cash ratio."),
     "inventory_turnover": ("ratio", "Inventory turnover", "Inventory turnover (times)."),
     "days_sales_in_inventory": ("days", "Days' sales in inventory", "Days' sales in inventory (days)."),
-    "receivables_turnover": ("ratio", "Receivables turnover", "Receivables turnover (times)."),
+    "credit_sales": ("money", "Credit sales", "Sales made on credit (an amount)."),
+    "credit_sales_pct": ("pct", "Credit sales (% of sales)", "Share of sales made on credit, in percent: 85 percent -> 85."),
+    "receivables_turnover": ("ratio", "Receivables turnover", (
+        "Receivables turnover (times): credit sales ÷ receivables when credit sales are given, otherwise sales ÷ receivables.")),
     "days_sales_in_receivables": ("days", "Days' sales in receivables", "Days' sales in receivables or average collection period (days)."),
     "total_asset_turnover": ("ratio", "Total asset turnover", "Total asset turnover (times)."),
     "fixed_asset_turnover": ("ratio", "Fixed asset turnover", "Fixed asset turnover (times)."),
@@ -89,13 +92,77 @@ VARIABLES: dict[str, tuple[str, str, str]] = {
     "enterprise_value": ("money", "Enterprise value", "Enterprise value."),
     "ev_ebitda": ("ratio", "EV/EBITDA", "Enterprise value to EBITDA multiple."),
 }
+# alternative names a model uses for the same items; mapped to the canonical name before names are checked. Live runs sent
+# interest_expense, accounts_receivable and return_on_equity_pct, were rejected, and then dropped the figure or did mental maths.
+_ALIAS_GROUPS = {
+    "sales": "revenue revenues net_sales total_sales sales_revenue total_revenue",
+    "costs": "operating_costs operating_expenses total_costs",
+    "cogs": "cost_of_goods_sold cost_of_sales",
+    "depreciation": "depreciation_expense depreciation_and_amortization",
+    "ebit": "operating_income earnings_before_interest_and_taxes operating_profit",
+    "interest": "interest_expense interest_paid",
+    "ebt": "earnings_before_taxes pretax_income taxable_income profit_before_tax",
+    "tax_rate_pct": "tax_rate",
+    "taxes": "income_tax tax_expense taxes_paid",
+    "net_income": "net_profit profit_after_tax net_earnings",
+    "dividends": "dividends_paid total_dividends",
+    "addition_to_retained_earnings": "addition_to_re retained_earnings_addition",
+    "receivables": "accounts_receivable receivable",
+    "inventory": "inventories",
+    "net_fixed_assets": "fixed_assets",
+    "net_working_capital": "nwc working_capital",
+    "total_debt": "total_liabilities",
+    "total_equity": "equity shareholders_equity stockholders_equity owners_equity total_shareholders_equity",
+    "debt_equity_ratio": "debt_to_equity debt_to_equity_ratio de_ratio",
+    "debt_ratio": "debt_to_assets debt_to_assets_ratio total_debt_ratio debt_to_total_assets",
+    "quick_ratio": "acid_test_ratio",
+    "total_asset_turnover": "asset_turnover",
+    "receivables_turnover": "accounts_receivable_turnover receivable_turnover",
+    "days_sales_in_receivables": "days_sales_outstanding average_collection_period dso",
+    "days_sales_in_inventory": "days_in_inventory days_inventory",
+    "times_interest_earned": "interest_coverage tie",
+    "roe_pct": "roe return_on_equity",
+    "roa_pct": "roa return_on_assets",
+    "profit_margin_pct": "profit_margin net_profit_margin net_margin",
+    "payout_ratio_pct": "payout_ratio dividend_payout_ratio",
+    "retention_ratio_pct": "retention_ratio plowback_ratio",
+    "credit_sales_pct": "percent_credit_sales credit_pct",
+    "sustainable_growth_pct": "sustainable_growth_rate",
+    "internal_growth_pct": "internal_growth_rate",
+    "shares": "shares_outstanding number_of_shares",
+    "eps": "earnings_per_share",
+    "price": "price_per_share share_price stock_price",
+    "pe_ratio": "pe price_earnings_ratio",
+    "market_cap": "market_capitalization",
+    "book_value_per_share": "bvps",
+    "market_to_book": "market_to_book_ratio",
+    "dividends_per_share": "dps",
+}
+ALIASES = {alias: name for name, words in _ALIAS_GROUPS.items() for alias in words.split()}
+
+
+def resolve(name: str) -> str:
+    """Canonical item name: the alias table, then *_percent / *_percentage -> *_pct (return_on_equity_percent -> roe_pct)."""
+    if not isinstance(name, str) or name in VARIABLES:
+        return name
+    if name in ALIASES:
+        return ALIASES[name]
+    for suffix in ("_percentage", "_percent", "_pct"):
+        if name.endswith(suffix):
+            base = name[: -len(suffix)]
+            for cand in (base + "_pct", ALIASES.get(base, "")):
+                if cand in VARIABLES and VARIABLES[cand][0] == "pct":
+                    return cand
+    return name
+
+
 KIND = {name: v[0] for name, v in VARIABLES.items()}
 LABEL = {name: v[1] for name, v in VARIABLES.items()}
 NONNEGATIVE = {"sales", "costs", "cogs", "depreciation", "interest", "tax_rate_pct", "dividends", "current_assets",
                "current_liabilities", "cash", "receivables", "inventory", "quick_assets", "net_fixed_assets", "total_assets",
                "long_term_debt", "total_debt", "current_ratio", "quick_ratio", "cash_ratio", "inventory_turnover",
-               "days_sales_in_inventory", "receivables_turnover", "days_sales_in_receivables", "total_asset_turnover",
-               "fixed_asset_turnover", "capital_intensity", "debt_ratio", "shares", "price", "market_cap", "dividends_per_share"}
+               "days_sales_in_inventory", "receivables_turnover", "credit_sales", "credit_sales_pct", "days_sales_in_receivables",
+               "total_asset_turnover", "fixed_asset_turnover", "capital_intensity", "debt_ratio", "shares", "price", "market_cap", "dividends_per_share"}
 TOLERANCE = 0.005   # inputs that disagree by more than 0.5% are reported as inconsistent
 
 _SYM = {name: sp.Symbol(name) for name in VARIABLES}
@@ -121,7 +188,9 @@ IDENTITIES: list[tuple[str, sp.Expr, str]] = [
     ("cash_ratio", s.cash / s.current_liabilities, "cash ÷ current_liabilities"),
     ("inventory_turnover", s.cogs / s.inventory, "cogs ÷ inventory"),
     ("days_sales_in_inventory", 365 / s.inventory_turnover, "365 ÷ inventory_turnover"),
-    ("receivables_turnover", s.sales / s.receivables, "sales ÷ receivables"),
+    ("receivables_turnover", s.sales / s.receivables, "sales ÷ receivables"),               # no credit figures given
+    ("credit_sales", s.sales * s.credit_sales_pct / 100, "sales × credit_sales_pct ÷ 100"),
+    ("receivables_turnover", s.credit_sales / s.receivables, "credit_sales ÷ receivables"),   # credit figures given
     ("days_sales_in_receivables", 365 / s.receivables_turnover, "365 ÷ receivables_turnover"),
     ("total_assets", s.current_assets + s.net_fixed_assets, "current_assets + net_fixed_assets"),
     ("total_assets", s.total_debt + s.total_equity, "total_debt + total_equity"),
@@ -158,6 +227,7 @@ IDENTITIES: list[tuple[str, sp.Expr, str]] = [
     ("roe_pct", s.profit_margin_pct * s.total_asset_turnover * s.equity_multiplier,
      "profit_margin_pct × total_asset_turnover × equity_multiplier"),
     ("roa_pct", s.profit_margin_pct * s.total_asset_turnover, "profit_margin_pct × total_asset_turnover"),
+    ("net_income", s.ebt * (1 - s.tax_rate_pct / 100), "ebt × (1 − tax_rate_pct ÷ 100)"),   # works EBT back from net income
     ("roe_pct", s.roa_pct * s.equity_multiplier, "roa_pct × equity_multiplier"),
     ("equity_multiplier", 1 + s.debt_equity_ratio, "1 + debt_equity_ratio"),
     ("debt_ratio", 1 - 1 / s.equity_multiplier, "1 − 1 ÷ equity_multiplier"),
@@ -168,6 +238,17 @@ IDENTITIES: list[tuple[str, sp.Expr, str]] = [
     ("capital_intensity", 1 / s.total_asset_turnover, "1 ÷ total_asset_turnover"),
 ]
 _VARS = [frozenset({lhs} | {str(x) for x in rhs.free_symbols}) for lhs, rhs, _ in IDENTITIES]
+# formula text for a rearranged identity where SymPy's form is less readable than the textbook's
+_REARRANGED = {("ebt × (1 − tax_rate_pct ÷ 100)", "ebt"): "net_income ÷ (1 − tax_rate_pct ÷ 100)"}
+# receivables turnover has two definitions; exactly one is active in a call, so they can never conflict
+_CREDIT_NAMES = {"credit_sales", "credit_sales_pct"}
+_TOTAL_SALES_ONLY = {"sales ÷ receivables"}
+_CREDIT_ONLY = {"credit_sales ÷ receivables"}
+
+
+def _active(credit: bool) -> list[int]:
+    skip = _TOTAL_SALES_ONLY if credit else _CREDIT_ONLY
+    return [i for i, (_, _, text) in enumerate(IDENTITIES) if text not in skip]
 
 
 # ---------------------------------------------------------------- formula text
@@ -214,7 +295,7 @@ def _solved(idx: int, var: str) -> tuple[sp.Expr, str] | None:
         sols = sp.solve(sp.Eq(_SYM[lhs], rhs), _SYM[var])
     except (NotImplementedError, ValueError):
         return None
-    return (sols[0], _show(sols[0])) if len(sols) == 1 else None
+    return (sols[0], _REARRANGED.get((text, var)) or _show(sols[0])) if len(sols) == 1 else None
 
 
 # ---------------------------------------------------------------- number text
@@ -266,6 +347,18 @@ def _suggest(name: str) -> str:
     return f"{name} (did you mean {' or '.join(close)}?)" if close else name
 
 
+def canonical(items: dict) -> dict:
+    """Alternative names mapped to canonical ones; the same item under two names with different values is an error."""
+    out = {}
+    for k, v in items.items():
+        name = resolve(k)
+        if name in out and v is not None and out[name] is not None and float(out[name]) != float(v):
+            raise ValueError(f"{k} is another name for {name}, and the two were given different values ({float(v):g} and "
+                             f"{float(out[name]):g}). Pass it once, as {name}.")
+        out[name] = v if v is not None else out.get(name)
+    return out
+
+
 def check_names(names, what: str = "item") -> None:
     bad = [n for n in names if n not in VARIABLES]
     if bad:
@@ -280,6 +373,8 @@ def solve_financials(targets: list[str], **given) -> dict:
         targets = [targets]
     if not targets:
         raise ValueError("targets must name at least one item to find, e.g. ['net_income'].")
+    targets = list(dict.fromkeys(resolve(t) for t in targets))
+    given = canonical(given)
     check_names(given)
     check_names(targets, "target")
     given = {k: float(v) for k, v in given.items() if v is not None}
@@ -289,11 +384,13 @@ def solve_financials(targets: list[str], **given) -> dict:
         raise ValueError("Pass the figures the question gives, by name, e.g. sales=675000, tax_rate_pct=23.")
 
     known = {k: _rational(v) for k, v in inputs.items()}
+    active = _active(credit=bool(_CREDIT_NAMES & (set(inputs) | set(targets))))
     derived: list[tuple[str, int, str]] = []                          # (item, identity index, formula text)
     progress = True
     while progress:
         progress = False
-        for idx, names in enumerate(_VARS):
+        for idx in active:
+            names = _VARS[idx]
             unknown = [n for n in names if n not in known]
             if len(unknown) != 1:
                 continue
@@ -311,7 +408,8 @@ def solve_financials(targets: list[str], **given) -> dict:
     values = {k: float(v) for k, v in known.items()}
     used = {var: idx for var, idx, _ in derived}
     warnings = []
-    for idx, (lhs, rhs, text) in enumerate(IDENTITIES):
+    for idx in active:
+        lhs, rhs, text = IDENTITIES[idx]
         if not _VARS[idx] <= known.keys() or used.get(lhs) == idx or any(used.get(v) == idx for v in _VARS[idx]):
             continue
         left, right = float(known[lhs]), float(_evaluate(rhs, known) or sp.nan)
@@ -343,7 +441,7 @@ def solve_financials(targets: list[str], **given) -> dict:
     out = {"inputs": inputs,
            "formula": "Standard textbook identities (Ross, Westerfield & Jordan); each step shows the formula used.",
            "steps": steps, "result": result, "formatted": {t: _formatted(t, values[t]) for t in result}}
-    missing = {t: _missing_message(t, known) for t in targets if t not in values}
+    missing = {t: _missing_message(t, known, active) for t in targets if t not in values}
     if missing:
         out["missing"] = missing
     extra = {var: round(values[var], 6) for var, _, _ in derived if var not in need}
@@ -357,9 +455,10 @@ def solve_financials(targets: list[str], **given) -> dict:
     return out
 
 
-def _missing_message(target: str, known: dict) -> str:
+def _missing_message(target: str, known: dict, active: list[int]) -> str:
     parts = []
-    for idx, names in enumerate(_VARS):
+    for idx in active:
+        names = _VARS[idx]
         if target in names:
             unknown = sorted(n for n in names if n not in known and n != target)
             lhs, _, text = IDENTITIES[idx]
