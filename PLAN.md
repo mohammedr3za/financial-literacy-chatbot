@@ -16,9 +16,9 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - **Acceptance:** `uv run pytest tests/test_calculators.py tests/test_math_engine.py` passes. The EMI for ₹20 lakh at 8.5% over 240 months is ≈ ₹17,356, and malicious expressions are rejected.
 
 ## M2 — Knowledge base (Sat AM)
-- [ ] Download the guideline corpus and the OpenStax book; fill in `kb/sources.csv`
-- [ ] `ingest.py`: PDF and HTML to chunks and embeddings
-- [ ] `search.py`: hybrid BM25 and dense search with reciprocal-rank fusion
+- [x] Download the guideline corpus and the OpenStax book; fill in `kb/sources.csv`
+- [x] `ingest.py`: PDF and HTML to chunks and embeddings
+- [x] `search.py`: hybrid BM25 and dense search with reciprocal-rank fusion
 - **Acceptance:** 10 known-answer queries find the correct source in the top 5 (`tests/test_search.py`).
 
 ## M3 — Graph and CLI (Sat)
@@ -77,3 +77,10 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - The first end-to-end run also found fake `[S1]` citations and a wrong crypto tax rule. Review checks 6–8 were added (SPEC changelog).
 - M4 code (`app.py`, `run_demo.sh`) and M5 code are being written in parallel, per the CLAUDE.md exception for blocked milestones.
 - Corpus gaps: the official Income Tax VDA PDF blocked automated download (a partial ITR-2 FAQ page was saved instead). The Income-tax Act, 2025 has applied since 2026-04-01, so section numbers such as 194S changed.
+
+### 2026-10-16 — M2 closed
+- Corpus: 15 official documents in `kb/raw/` (OpenStax *Principles of Finance 2e*, 629 pages; 13 SEBI/RBI/DICGC/AMFI PDFs; 1 Income Tax HTML page), listed in `kb/sources.csv`.
+- `uv run python -m finbot.kb.ingest` → 1,724 chunks from 15 files in 208 s, none skipped.
+- `uv run python scripts/check_retrieval.py` → **10/10** known-answer queries found the right source in the top 5 (8 at rank 1).
+- Threshold calibration: relevant queries scored 0.53–0.75, off-topic queries 0.41–0.48. `FINBOT_MIN_DENSE_SCORE` raised from 0.45 to 0.50, so all 4 off-topic queries are rejected and all 10 known queries stay relevant.
+- Known gap: the Income Tax VDA PDF could not be downloaded automatically (see blockers above).

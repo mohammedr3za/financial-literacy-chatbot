@@ -20,7 +20,7 @@ class Settings:
     embed_model: str = field(default_factory=lambda: os.getenv("FINBOT_EMBED_MODEL", "bge-m3"))
     kb_dir: Path = PROJECT_ROOT / "kb"
     top_k: int = 5
-    min_dense_score: float = field(default_factory=lambda: float(os.getenv("FINBOT_MIN_DENSE_SCORE", "0.45")))
+    min_dense_score: float = field(default_factory=lambda: float(os.getenv("FINBOT_MIN_DENSE_SCORE", "0.50")))
     max_tool_iterations: int = 6
     max_revisions: int = 1
     session_cap: int = 25

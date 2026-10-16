@@ -1,0 +1,155 @@
+about: '30 calculation problems. Expected answers come from standalone formulas in scripts/make_calc_answers.py, not from FinBot''s tools. Team:
+  spot-check at least 5 in a spreadsheet and record who checked them.'
+tolerance_pct: 0.5
+spot_checked_by: []
+problems:
+- id: c01
+  topic: emi
+  question: What is the monthly EMI on a ₹20 lakh home loan at 8.5% a year for 20 years?
+  expected: 17356.4647
+  unit: INR
+- id: c02
+  topic: emi
+  question: What is the EMI on a ₹5 lakh car loan at 9.25% for 5 years?
+  expected: 10439.9491
+  unit: INR
+- id: c03
+  topic: emi
+  question: On a ₹50 lakh home loan at 8.75% for 25 years, how much total interest will I pay?
+  expected: 7332154.5418
+  unit: INR
+- id: c04
+  topic: emi
+  question: What is the EMI on a ₹2,00,000 personal loan at 14% for 36 months?
+  expected: 6835.526
+  unit: INR
+- id: c05
+  topic: emi
+  question: What is the EMI on a ₹10 lakh education loan at 10.5% for 7 years?
+  expected: 16860.6731
+  unit: INR
+- id: c06
+  topic: sip
+  question: If I invest ₹10,000 every month in a SIP for 10 years at 12% a year, what will the corpus be?
+  expected: 2323390.7635
+  unit: INR
+- id: c07
+  topic: sip
+  question: What will a ₹5,000 monthly SIP grow to in 20 years at 10% a year?
+  expected: 3828484.5481
+  unit: INR
+- id: c08
+  topic: sip
+  question: What will a ₹2,500 monthly SIP become after 15 years at 8% a year?
+  expected: 870862.8577
+  unit: INR
+- id: c09
+  topic: sip
+  question: With a ₹15,000 monthly SIP at 12% for 5 years, how much gain will I make over what I invested?
+  expected: 337295.4983
+  unit: INR
+- id: c10
+  topic: sip
+  question: 'A ₹10,000 monthly SIP at 12% for 10 years, increased by 10% every year: what is the final corpus?'
+  expected: 3374326.2642
+  unit: INR
+- id: c11
+  topic: tvm
+  question: What will ₹1,00,000 grow to in 5 years at 7% compounded annually?
+  expected: 140255.1731
+  unit: INR
+- id: c12
+  topic: tvm
+  question: How much must I invest today at 8% a year to have ₹10 lakh in 10 years?
+  expected: 463193.4881
+  unit: INR
+- id: c13
+  topic: tvm
+  question: An investment grew from ₹50,000 to ₹1,20,000 in 6 years. What is its CAGR?
+  expected: 15.7094
+  unit: PCT
+- id: c14
+  topic: tvm
+  question: How many years will money take to double at 9% a year compounded annually?
+  expected: 8.0432
+  unit: YEARS
+- id: c15
+  topic: tvm
+  question: How much must I save at the end of each month to reach ₹1 crore in 15 years at 12% a year compounded monthly?
+  expected: 20016.8062
+  unit: INR
+- id: c16
+  topic: npv
+  question: What is the NPV at 10% of a project costing ₹1,00,000 that returns ₹30,000, ₹40,000, ₹50,000 and ₹20,000 over four years?
+  expected: 11556.5877
+  unit: INR
+- id: c17
+  topic: irr
+  question: What is the IRR of investing ₹50,000 and receiving ₹15,000, ₹20,000 and ₹25,000 over the next three years?
+  expected: 8.8963
+  unit: PCT
+- id: c18
+  topic: irr
+  question: A project costs ₹1,000 and returns ₹300, ₹400 and ₹500 over three years. What is its IRR?
+  expected: 8.8963
+  unit: PCT
+- id: c19
+  topic: npv
+  question: What is the NPV at 12% of paying ₹2,00,000 today and receiving ₹60,000 a year for 5 years?
+  expected: 16286.5721
+  unit: INR
+- id: c20
+  topic: bond
+  question: What is the price of a ₹1,000 face value bond with an 8% annual coupon, 10 years to maturity, if the yield is 9%?
+  expected: 935.8234
+  unit: PRICE
+- id: c21
+  topic: bond
+  question: Price a ₹1,000 bond paying a 7% coupon semi-annually with 5 years to maturity at a 6% yield.
+  expected: 1042.651
+  unit: PRICE
+- id: c22
+  topic: bond
+  question: A 5-year bond with a 10% annual coupon and ₹1,000 face value trades at ₹927.90. What is its yield to maturity?
+  expected: 12.0001
+  unit: PCT
+- id: c23
+  topic: bond
+  question: What is the Macaulay duration of a 5-year, 10% annual coupon bond priced at par?
+  expected: 4.1699
+  unit: YEARS
+- id: c24
+  topic: option
+  question: Using Black-Scholes, price a European call with spot 42, strike 40, 6 months to expiry, 10% risk-free rate and 20% volatility.
+  expected: 4.7594
+  unit: PRICE
+- id: c25
+  topic: option
+  question: Using Black-Scholes, price a European put with spot 42, strike 40, 6 months to expiry, 10% risk-free rate and 20% volatility.
+  expected: 0.8086
+  unit: PRICE
+- id: c26
+  topic: option
+  question: Black-Scholes price of a 1-year at-the-money European call on a stock at ₹100 with 7% risk-free rate and 25% volatility?
+  expected: 13.3639
+  unit: PRICE
+- id: c27
+  topic: percent
+  question: A phone costs ₹45,000 before GST. What is the price including 18% GST?
+  expected: 53100.0
+  unit: INR
+- id: c28
+  topic: percent
+  question: What is 15% of ₹2,45,000, plus 18% GST on that amount?
+  expected: 43365.0
+  unit: INR
+- id: c29
+  topic: percent
+  question: If my FD pays 8% and inflation is 6%, what is my real return?
+  expected: 1.8868
+  unit: PCT
+- id: c30
+  topic: percent
+  question: What is the effective annual rate of 12% a year compounded monthly?
+  expected: 12.6825
+  unit: PCT
