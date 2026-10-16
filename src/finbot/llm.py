@@ -34,6 +34,8 @@ def get_runnables(tools: list, settings: Settings | None = None):
     primary = ChatOpenAI(model=s.model, base_url=s.base_url, api_key="not-needed", temperature=s.temperature,
                          max_tokens=s.max_output_tokens, timeout=s.request_timeout, max_retries=0,
                          extra_body={"chat_template_kwargs": {"enable_thinking": s.thinking}})
+    if not s.fallback_model or s.fallback_model.lower() == "none":  # e.g. on the GPU box itself
+        return primary, primary.bind_tools(tools)
     fallback = _ollama(s.fallback_model, s.fallback_url, s)
     return (primary.with_fallbacks([fallback]),
             primary.bind_tools(tools).with_fallbacks([fallback.bind_tools(tools)]))
