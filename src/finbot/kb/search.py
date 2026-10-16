@@ -8,7 +8,7 @@ from rank_bm25 import BM25Okapi
 
 RRF_K = 60
 CANDIDATES = 50
-MAX_PER_FILE = 3
+MAX_PER_FILE = 2  # 26 sources: keep the top 5 diverse so one long booklet cannot crowd out a circular
 _STOP = set("a an and are as at be by can do does for from has have how i in is it its me my of on or should so "
             "that the this to was what when where which who why will with would you your".split())
 

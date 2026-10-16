@@ -21,7 +21,9 @@ def main() -> None:
     ap.add_argument("--data", default="train/data/sft.jsonl")
     ap.add_argument("--out", default="train/out")
     ap.add_argument("--epochs", type=float, default=2)
-    ap.add_argument("--max-seq", type=int, default=4096)
+    ap.add_argument("--max-seq", type=int, default=8192)   # system prompt + 14 tool schemas + sources is ~5k tokens before the answer
+    ap.add_argument("--batch", type=int, default=1)
+    ap.add_argument("--grad-accum", type=int, default=16)
     ap.add_argument("--eval-frac", type=float, default=0.05)
     a = ap.parse_args()
 
@@ -42,7 +44,7 @@ def main() -> None:
 
     trainer = SFTTrainer(  # TRL 1.x names: processing_class (not tokenizer), max_length (not max_seq_length)
         model=model, processing_class=tokenizer, train_dataset=train_ds, eval_dataset=eval_ds,
-        args=SFTConfig(max_length=a.max_seq, dataset_text_field="text", per_device_train_batch_size=2, gradient_accumulation_steps=8,
+        args=SFTConfig(max_length=a.max_seq, dataset_text_field="text", per_device_train_batch_size=a.batch, gradient_accumulation_steps=a.grad_accum,
                        num_train_epochs=a.epochs, learning_rate=2e-4, warmup_ratio=0.05, lr_scheduler_type="cosine",
                        logging_steps=5, eval_strategy="steps", eval_steps=50, save_strategy="no",
                        optim="adamw_8bit", seed=3407, output_dir=f"{a.out}/checkpoints", dataset_num_proc=1,

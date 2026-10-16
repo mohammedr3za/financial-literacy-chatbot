@@ -14,22 +14,31 @@ from .precheck import precheck as run_precheck
 from .prompts import SYSTEM_PROMPT, context_block
 from .review import FOOTER, review_answer, reviewer_note
 from .tables import to_markdown
+from .tools.financial_solver import KIND as SOLVER_KIND
 from .tools.fmt import MONEY_STYLE
 from .tools.registry import CALC_TOOLS, TOOLS_BY_NAME
 
 _THINK = re.compile(r"<think>.*?</think>", re.S)
-GROUNDED_TOOLS = {"financial_ratios", "balance_sheet_check", "cash_flow_statement"}
-_NUMBER = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|(?<![\w.,])\d+(?:\.\d+)?")
+GROUNDED_TOOLS = {"financial_ratios", "balance_sheet_check", "cash_flow_statement", "solve_financials"}
+_NUMBER = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|(?<![\w.,])\d+(?:\.\d+)?|(?<![\w.])\.\d+")   # ".84" too
+_SCALED = re.compile(r"(?i)(?<![\w.])(\d+(?:\.\d+)?|\.\d+)\s*(thousand|million|mn|billion|bn)\b")
+_SCALE = {"thousand": 1e3, "million": 1e6, "mn": 1e6, "billion": 1e9, "bn": 1e9}
+_PERCENT = re.compile(r"(?i)(?<![\w.,])(\d+(?:\.\d+)?|\.\d+)\s*(%|per ?cent)")
+_NUMERIC_STRING = re.compile(r"\s*[-+]?(\d[\d,]*(\.\d+)?|\.\d+)\s*")
 
 
 def numbers_in(text: str) -> set[float]:
-    return {round(float(n.replace(",", "")), 4) for n in _NUMBER.findall(text or "")}
+    """Numbers written in the text, plus "4.5 million" style amounts in full."""
+    found = {round(float(n.replace(",", "")), 4) for n in _NUMBER.findall(text or "")}
+    return found | {round(float(n) * _SCALE[u.lower()], 4) for n, u in _SCALED.findall(text or "")}
 
 
 def _arg_numbers(args, path=""):
     if isinstance(args, bool):
         return
-    if isinstance(args, (int, float)):
+    if isinstance(args, str) and _NUMERIC_STRING.fullmatch(args):   # "445000" sent as text is checked like a number
+        yield path, float(args.replace(",", ""))
+    elif isinstance(args, (int, float)):
         yield path, float(args)
     elif isinstance(args, dict):
         for k, v in args.items():
@@ -39,12 +48,34 @@ def _arg_numbers(args, path=""):
             yield from _arg_numbers(v, f"{path}[{i}]")
 
 
-def ungrounded_values(args: dict, user_text: str) -> list[str]:
+def _solver_unit_problem(name: str, a: float, allowed: set, percents: set, percent_only: set) -> str | None:
+    """solve_financials units: *_pct items take the percent number, ratios a plain number. None if the value is grounded."""
+    kind = SOLVER_KIND.get(name)
+    if kind == "pct":
+        fractions = {x for x in allowed if x < 1 and x not in percents}
+        if (a in allowed and not (a < 1 and a not in percents)) or round(a / 100, 4) in fractions:
+            return None
+        return " (percent items take the percent number: 23 percent -> 23, .23 -> 23)"
+    if kind in ("ratio", "days"):
+        if (a in allowed and a not in percent_only) or round(a * 100, 4) in percents:
+            return None
+        return " (ratios are plain numbers: .84 -> 0.84, a 40 percent ratio -> 0.4)"
+    return None if a in allowed else ""
+
+
+def ungrounded_values(args: dict, user_text: str, tool: str | None = None) -> list[str]:
     """Numbers in a statement-tool call that do not appear in the user's message (zeros are ignored)."""
     allowed = numbers_in(user_text)
     diffs = {round(abs(a - b), 4) for a in allowed for b in allowed}
+    percents = {round(float(n), 4) for n, _ in _PERCENT.findall(user_text or "")}
+    percent_only = percents - numbers_in(_PERCENT.sub(" ", user_text or ""))
     bad = []
     for p, v in _arg_numbers(args):
+        if tool == "solve_financials" and v != 0:
+            hint = _solver_unit_problem(p, round(abs(v), 4), allowed, percents, percent_only)
+            if hint is not None:
+                bad.append(f"{p}={v:g}{hint}")
+            continue
         if v == 0 or round(abs(v), 4) in allowed:
             continue
         # a working-capital change may be the model's own subtraction, but only if it is exactly closing − opening of given figures
@@ -52,6 +83,38 @@ def ungrounded_values(args: dict, user_text: str) -> list[str]:
             continue
         bad.append(f"{p}={v:g}")
     return bad
+
+
+_RATE_ARGS = {"loan_emi": ("annual_rate_pct",), "tvm": ("annual_rate_pct",), "sip_future_value": ("annual_return_pct",),
+              "goal_saving": ("annual_return_pct",)}
+_ZERO_RATE_STATED = re.compile(r"(?i)(?<![\d.])0(\.0+)?\s*(%|per ?cent)|\bzero\b|interest[- ]free|\bno interest\b|"
+                               r"without (any )?interest|\b0 interest\b")
+
+
+def invented_zero_rates(tool: str, args: dict, user_text: str) -> list[str]:
+    """A small model fills an unknown rate with 0. A 0% rate is only accepted if the question says so."""
+    if tool == "tvm" and args.get("solve_for") == "annual_rate_pct":   # the rate is the unknown and is ignored
+        return []
+    zeros = [k for k in _RATE_ARGS.get(tool, ()) if isinstance(args.get(k), (int, float)) and not isinstance(args.get(k), bool)
+             and args[k] == 0]
+    return [] if not zeros or _ZERO_RATE_STATED.search(user_text or "") else zeros
+
+
+def _argument_error(name: str, exc: Exception) -> str:
+    """Pydantic errors as short "field: problem" text the model can act on."""
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            parts = [(".".join(str(x) for x in e.get("loc", ())) + ": " if e.get("loc") else "") + e.get("msg", "") for e in errors()]
+            return f"Invalid arguments for {name}: {'; '.join(parts)}"
+        except Exception:  # noqa: BLE001 - fall back to the plain message
+            pass
+    return f"Invalid arguments for {name}: {exc}"
+
+
+_SOLVER_ADVICE = (" For solve_financials, pass each figure exactly as the question states it under its name; percent items (*_pct) "
+                  "take the percent number (23 percent -> 23) and ratios are plain numbers (.84 -> 0.84). Never compute an input "
+                  "yourself: put the item you need in targets.")
 
 
 class State(TypedDict, total=False):
@@ -140,18 +203,24 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         out = []
         style = MONEY_STYLE.set(state.get("flags", {}).get("currency", "INR"))   # $ questions get $ formatting
         for tc in state["messages"][-1].tool_calls:
-            bad = ungrounded_values(tc["args"], user_text) if tc["name"] in GROUNDED_TOOLS else []
+            bad = ungrounded_values(tc["args"], user_text, tc["name"]) if tc["name"] in GROUNDED_TOOLS else []
+            zero_rates = invented_zero_rates(tc["name"], tc["args"], user_text)
             if bad:
                 content = json.dumps({"error": f"These values are not in the user's data: {', '.join(bad)}. Pass only figures "
                                       "that appear in the data, exactly as given. Leave out items that are not given, and give "
-                                      "opening and closing balances instead of computing changes yourself."})
+                                      "opening and closing balances instead of computing changes yourself."
+                                      + (_SOLVER_ADVICE if tc["name"] == "solve_financials" else "")}, ensure_ascii=False)
+            elif zero_rates:
+                content = json.dumps({"error": f"{', '.join(f'{k}=0' for k in zero_rates)} is not in the question: a 0% rate is only "
+                                      "valid if the question says so. If the rate is what you need to find, leave it out: loan_emi "
+                                      "solves for whichever one of principal, annual_rate_pct, months and emi is missing."})
             elif tc["name"] not in TOOLS_BY_NAME:
                 content = json.dumps({"error": f"Unknown tool {tc['name']}."})
             else:
                 try:
                     content = TOOLS_BY_NAME[tc["name"]].invoke(tc["args"])
                 except Exception as exc:  # invalid arguments: tell the model so it can retry
-                    content = json.dumps({"error": f"Invalid arguments for {tc['name']}: {exc}"})
+                    content = json.dumps({"error": _argument_error(tc["name"], exc)}, ensure_ascii=False)
             out.append(ToolMessage(content=content, tool_call_id=tc["id"], name=tc["name"]))
         MONEY_STYLE.reset(style)
         return {"messages": out}
@@ -177,6 +246,9 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
             return {"messages": [HumanMessage(content=reviewer_note(result), name="reviewer")],
                     "revisions": state.get("revisions", 0) + 1,
                     "review": {"passed": False, "codes": result.codes, "first_draft_codes": result.codes}}
+        if not answer.strip():   # the model gave up after the reviewer note: say so instead of showing only the footer
+            answer = ("I could not complete this answer reliably. Please rephrase the question, or give the figures "
+                      "(for example the cash flows year by year) and I will calculate it.")
         return {"messages": [AIMessage(content=answer + FOOTER, id=last_ai.id)],
                 "review": {"passed": False, "codes": result.codes, "first_draft_codes": prior, "footer": True}}
 
@@ -222,6 +294,17 @@ def strip_model_tables(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", _MD_TABLE.sub("", text)).strip()
 
 
+_TABLE_ABOVE = re.compile(r"(?i)\b(the\s+)?(above\s+table|table\s+above)\b")
+
+
+def fix_table_refs(text: str) -> str:
+    """Tool tables render below the answer, so "the table above" / "the above table" become "the table below"."""
+    def repl(m):
+        out = ("the table below" if m.group(1) or m.group(2).lower().startswith("above") else "table below")
+        return out[0].upper() + out[1:] if m.group(0)[0].isupper() else out
+    return _TABLE_ABOVE.sub(repl, text)
+
+
 def turn_trace(state: dict) -> dict:
     """Everything the UI's "How I got this" panel and the benchmark log need for the latest turn."""
     msgs, qi = state["messages"], state["question_idx"]
@@ -241,7 +324,7 @@ def turn_trace(state: dict) -> dict:
     tables = state.get("tables", [])
     answer_text = text_of(final) if final else ""
     if tables:
-        answer_text = strip_model_tables(answer_text)
+        answer_text = fix_table_refs(strip_model_tables(answer_text))
     return {
         "question_sent_to_model": text_of(msgs[qi]),
         "flags": state.get("flags", {}), "redactions": state.get("redactions", []), "amounts": state.get("amounts", []),

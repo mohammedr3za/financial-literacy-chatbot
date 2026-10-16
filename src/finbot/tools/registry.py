@@ -4,11 +4,13 @@ Each tool returns a JSON string. Bad input returns {"error": ...} so the model c
 correct itself instead of the graph crashing.
 """
 import json
+from typing import Literal
 
 from langchain_core.tools import tool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 
 from . import calculators as C
+from . import financial_solver as F
 from . import statements as S
 from .math_engine import calculate as _calculate
 from .math_engine import solve_equation as _solve_equation
@@ -28,18 +30,6 @@ def _run(fn, **kwargs) -> str:
         return json.dumps(out, ensure_ascii=False)
     except (ValueError, TypeError) as exc:
         return json.dumps({"error": str(exc)}, ensure_ascii=False)
-
-
-@tool(parse_docstring=True)
-def loan_emi(principal: float, annual_rate_pct: float, months: int) -> str:
-    """Monthly EMI, total interest and first-year split for a home, car or personal loan.
-
-    Args:
-        principal: Loan amount in plain rupees, e.g. 20 lakh = 2000000.
-        annual_rate_pct: Yearly interest rate in percent, e.g. 8.5 for 8.5%.
-        months: Loan tenure in months, e.g. 20 years = 240.
-    """
-    return _run(C.loan_emi, principal=principal, annual_rate_pct=annual_rate_pct, months=months)
 
 
 @tool(parse_docstring=True)
@@ -190,6 +180,20 @@ class _Strict(BaseModel):
 _ITEMS = (float | None)
 
 
+class LoanArgs(_Strict):
+    principal: float | None = Field(None, description="Loan amount in plain rupees, e.g. 20 lakh = 2000000. Leave out if it is the unknown.")
+    annual_rate_pct: float | None = Field(None, description=(
+        "Yearly interest rate (APR) in percent, e.g. 8.5. Leave out if it is the unknown. Never pass 0 unless the loan is interest-free."))
+    months: int | None = Field(None, description="Number of monthly payments, e.g. 20 years = 240. Leave out if it is the unknown.")
+    emi: float | None = Field(None, description="Monthly payment (EMI). Leave out if it is the unknown.")
+
+
+@tool(args_schema=LoanArgs)
+def loan_emi(**kwargs) -> str:
+    """Loan with monthly payments (home, car, personal loan, mortgage). Give exactly three of principal, annual_rate_pct, months and emi; it solves the missing one: the EMI, the interest rate the payments imply (APR = monthly rate × 12, plus the effective annual rate), the number of months, or the amount that can be borrowed. Also returns total interest and a year-wise schedule. Leave the unknown out; never pass 0 for it."""
+    return _run(C.loan_emi, **kwargs)
+
+
 class RatioArgs(_Strict):
     current_assets: _ITEMS = Field(None, description="Total current assets.")
     current_liabilities: _ITEMS = Field(None, description="Total current liabilities.")
@@ -258,6 +262,36 @@ def cash_flow_statement(**kwargs) -> str:
     return _run(S.cash_flow_statement, **kwargs)
 
 
+class _SolverBase(_Strict):
+    """Explicit optional fields (the JSON schema lists every name for the model); unknown names get suggestions."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _names(cls, data):
+        if not isinstance(data, dict):
+            return data
+        data = {k: v for k, v in data.items() if v is not None}
+        F.check_names([k for k in data if k != "targets"])
+        if isinstance(data.get("targets"), str):
+            data["targets"] = [data["targets"]]
+        if isinstance(data.get("targets"), list):
+            F.check_names(data["targets"], "target")
+        return data
+
+
+SolveFinancialsArgs = create_model(
+    "SolveFinancialsArgs", __base__=_SolverBase,
+    targets=(list[Literal[tuple(F.VARIABLES)]], Field(min_length=1, description=(
+        "The item(s) the question asks for, by the names above, e.g. ['cogs'] or ['ebit', 'net_income']."))),
+    **{name: (float, Field(None, description=desc)) for name, (_, _, desc) in F.VARIABLES.items()})
+
+
+@tool(args_schema=SolveFinancialsArgs)
+def solve_financials(targets: list[str], **items) -> str:
+    """Solve textbook corporate-finance problems from statement figures and ratios: income statement (EBIT, taxes, net income), liquidity, turnover and days' sales, leverage and DuPont, profit margin, ROA, ROE, payout, retention, sustainable or internal growth, EPS, P/E, market-to-book and EV multiples. Pass EVERY figure the question gives under its name, and the item(s) asked for in targets; the tool applies the standard formulas and returns each step. Never compute an input yourself. Percent items (*_pct) take the percent number (23 percent -> 23); ratios and turnovers are plain numbers (.84 -> 0.84). Example: "current liabilities $445,000, quick ratio .84, inventory turnover 6, current ratio 1.3; what is COGS?" -> current_liabilities=445000, quick_ratio=0.84, inventory_turnover=6, current_ratio=1.3, targets=["cogs"]."""
+    return _run(F.solve_financials, targets=targets, **{k: v for k, v in items.items() if v is not None})
+
+
 CALC_TOOLS = [loan_emi, sip_future_value, goal_saving, tvm, real_return, effective_annual_rate, npv_irr, bond_metrics,
-              black_scholes, calculate, solve_equation, financial_ratios, balance_sheet_check, cash_flow_statement]
+              black_scholes, calculate, solve_equation, solve_financials, financial_ratios, balance_sheet_check, cash_flow_statement]
 TOOLS_BY_NAME = {t.name: t for t in CALC_TOOLS}

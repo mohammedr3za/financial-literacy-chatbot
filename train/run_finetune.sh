@@ -10,7 +10,7 @@ uv run python train/filter_dataset.py train/data/sft.jsonl train/data/sft_clean.
 rsync -az train/finetune.py train/data/sft_clean.jsonl "ubuntu@$IP:~/finbot-train/"
 $SSH 'pkill -f "[v]llm serve" || true; sleep 8; nvidia-smi --query-gpu=memory.used --format=csv,noheader'
 $SSH 'cd ~/finbot-train && export LD_LIBRARY_PATH=/usr/local/cuda-13.0/compat:$LD_LIBRARY_PATH HF_HUB_ENABLE_HF_TRANSFER=1 && \
-      ~/train-env/bin/python finetune.py --base Qwen/Qwen3-8B --data sft_clean.jsonl --out out --epochs 2 --max-seq 4096 2>&1 | tee train.log | \
+      ~/train-env/bin/python finetune.py --base Qwen/Qwen3-8B --data sft_clean.jsonl --out out --epochs 2 --max-seq 8192 2>&1 | tee train.log | \
       grep -E --line-buffered "loss|eval|Saved|Error|Traceback|train=" '
 mkdir -p train/out/gguf
 rsync -az --include "*Q4_K_M*.gguf" --include "*/" --exclude "*" "ubuntu@$IP:~/finbot-train/out/" train/out/

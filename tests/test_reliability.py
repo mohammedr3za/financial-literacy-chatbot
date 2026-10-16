@@ -2,7 +2,7 @@
 import pytest
 
 from finbot.precheck import precheck
-from finbot.review import review_answer
+from finbot.review import unsupported_figures, review_answer
 from finbot.tools.calculators import effective_annual_rate, goal_saving, real_return, sip_future_value
 
 
@@ -214,3 +214,21 @@ def test_one_step_arithmetic_on_evidence_is_verified_not_flagged():
     assert ok.passed, ok.codes                      # 47,495 = 206,500 × 0.23 is recomputed by the checker
     bad = review_answer("Taxes are 47,000, so net income is $159,005.", f, ["calculate"], 0, (), ev)
     assert "unsupported_figures" in bad.codes       # a wrong figure is still caught
+
+
+def test_npv_irr_returns_profitability_index_and_equivalent_annual_amount():
+    from finbot.tools.calculators import npv_irr
+    a = npv_irr([-77000, 35600, 35600, 35600], 10)["result"]          # Yoo project I
+    assert round(a["npv"], 2) == 11531.93 and round(a["profitability_index"], 3) == 1.150
+    assert a["pv_of_future_cash_flows"] == pytest.approx(77000 + 11531.93, abs=0.01)
+    assert round(npv_irr([-23500, 11400, 11400, 11400], 10)["result"]["profitability_index"], 3) == 1.206   # project II
+    bulb = npv_irr([-0.37, -3.39, -3.39], 10)["result"]                 # incandescent: $0.37, 30 kWh × $0.113 a year, 2 years
+    assert bulb["equivalent_annual_amount"] == pytest.approx(-3.6032, abs=1e-4)
+    led = npv_irr([-3.0] + [-0.8475] * 24, 10)["result"]                # LED: $3, 7.5 kWh × $0.113 a year, 24 years
+    assert led["equivalent_annual_amount"] == pytest.approx(-1.1814, abs=1e-4)
+
+
+def test_recomputed_figures_need_shown_working():
+    ev = "| 0 | -$77,000 | 35,600 | 10 percent {\"npv\": 11531.9309} {\"npv\": 4850.1127}"
+    assert unsupported_figures("Project I PI is 1.153.", ev, rel_tol=0.005, plain_numbers=True) == ["1.153"]
+    assert unsupported_figures("PV of inflows is 77,000 + 11,531.93 = 88,531.93.", ev, rel_tol=0.005, plain_numbers=True) == []

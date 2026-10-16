@@ -119,6 +119,22 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - Threshold calibration: relevant queries scored 0.53–0.75, off-topic queries 0.41–0.48. `FINBOT_MIN_DENSE_SCORE` raised from 0.45 to 0.50, so all 4 off-topic queries are rejected and all 10 known queries stay relevant.
 - Known gap: the Income Tax VDA PDF could not be downloaded automatically (see blockers above).
 
+### 2026-10-16 — M2 update: knowledge base rebuilt with 26 documents (user requirement: personal, corporate finance, guidelines)
+- Corpus: 26 documents, each with one `kb/sources.csv` row and no mismatches. All 11 new files have extractable text (no scans, no glyph artifacts).
+  - `personal/` has 5 documents.
+  - `books/` has 2: *Principles of Finance 2e* and *Principles of Accounting Vol 1* (973 pages).
+  - `guidelines/` has 19.
+- `uv run python -m finbot.kb.ingest` → **3,934 chunks from 26 files in 520 s** (was 1,724 from 15), none skipped. The embedding shared Ollama with the live `qwen3:8b` demo.
+  - New chunk counts: Accounting Vol 1 1,702; KYC Directions 172; NCFE 78; FAME 59; SEBI booklet 51; Finance Act 2025 highlights 38; Digital Lending 36; IRDAI 30; NPS FAQ 22; AY 2026-27 salaried page 20; VDA PDF 2.
+  - The chunk counts of the old 15 files did not change.
+- `uv run python scripts/check_retrieval.py`: before **10/10** (8 at rank 1, all in the top 3); after **9/10** (6 at rank 1).
+  - FAIL: "Can a SEBI-registered broker work with an unregistered finfluencer?" The circular is now at rank 6 (it was 3). The new SEBI securities-market booklet's "unregistered investment advisers" pages take ranks 1, 2 and 5. The circular never uses the word "finfluencer", so the match depends on the wording: "What are SEBI's rules on finfluencers?" still finds it at rank 3.
+  - The VDA query now ranks the official Income Tax VDA PDF first, which closes the M2 known gap. The check still counts only the ITR-2 FAQ (rank 2).
+  - Off-topic queries still score 0.41–0.48, so all are rejected at 0.50.
+  - The search was then changed in a parallel session: `MAX_PER_FILE` in `src/finbot/kb/search.py` went from 3 to 2. The check is now **10/10** (6 at rank 1). The finfluencer circular is at rank 5, so it is still **outside the top 3** that the app passes to the model. The other 9 queries are in the top 3.
+- New-document queries (ad hoc): before 2/12 in the top 5, after **11/12**, all 11 in the top 3 (the same with cap 2 or 3). Accrual accounting, double entry and trial balance → Accounting Vol 1 at rank 1. NPS Tier II → NPS FAQ at 1. Term vs endowment → IRDAI at 1. New-regime slabs and 87A → Finance Act 2025 at 1. Demat → SEBI booklet at 1. Lending-app contacts → Digital Lending at 2. Bank KYC documents → KYC Directions at 2. The one miss was a long compound budget query. "How do I make a monthly budget?" finds FAME at 1 and NCFE at 2.
+- Caveat: "How do I complain against my insurance company?" ranks the outdated IRDAI handbook first. Its complaint section is the outdated part.
+
 ### 2026-10-16 — Model decision (SPEC changelog)
 `uv run python scripts/compare_models.py qwen3.5:9b-q4_K_M qwen3:8b qwen3.5:4b` (6 acceptance prompts, document search on):
 

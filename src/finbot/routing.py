@@ -7,6 +7,10 @@ _ASK_AMOUNT = re.compile(r"\bhow much\b|\bwhat (monthly |yearly |annual )?(amoun
                          r"\bmonthly (sip|saving|investment|amount)s?\b.{0,20}\b(need|needed|required|should)\b", I)
 _TARGET = re.compile(r"\b(reach|accumulate|corpus|target|goal|build up|save up|end up with|to have|to become|to get)\b", I)
 _LUMP = re.compile(r"\b(today|now|lump[- ]?sum|one[- ]time|at once|upfront)\b", I)
+_LOAN = re.compile(r"\b(loans?|borrow\w*|mortgages?|lenders?)\b", I)
+_LOAN_ASK = re.compile(r"\b(payments?|instal+ments?|emi|apr|repa(y|id|ying|yment)|pay (it )?(back|off)|afford\w*|"
+                       r"how (much|many)\b.{0,25}\b(borrow|months|payments|years|instal+ments)|"
+                       r"(what|which|highest|maximum|max|implied) (annual )?(interest )?rate)\b", I)
 _PERIODIC = re.compile(r"\b(sip|every month|each month|per month|a month|monthly|every year|each year|per year|regularly)\b", I)
 
 ROUTES = [  # (type, test) in priority order
@@ -17,8 +21,10 @@ ROUTES = [  # (type, test) in priority order
     ("real_return", lambda q: bool(re.search(r"\breal (rate of )?return\b|\binflation[- ]adjusted\b|\bafter inflation\b|\bbeat(ing)? inflation\b", q, I))),
     ("effective_rate", lambda q: bool(re.search(r"\beffective (annual )?(rate|yield|interest)\b|\bear\b|\bapy\b|annual percentage yield", q, I))),
     ("emi", lambda q: bool(re.search(r"\bemi\b|\bequated monthly\b|\bmonthly instal+ments?\b", q, I))),
+    ("loan", lambda q: bool(_LOAN.search(q) and _LOAN_ASK.search(q))),
     ("cagr", lambda q: bool(re.search(r"\bcagr\b|compound(ed)? annual growth|annuali[sz]ed return", q, I))),
-    ("npv_irr", lambda q: bool(re.search(r"\bnpv\b|\birr\b|net present value|internal rate of return|\bpayback\b", q, I))),
+    ("npv_irr", lambda q: bool(re.search(r"\bnpv\b|\birr\b|net present value|internal rate of return|\bpayback\b|profitability index|"
+                                         r"equivalent annual (cost|annuity|annual)|\beac\b|\beaa\b", q, I))),
     ("bond", lambda q: bool(re.search(r"\bbond\b|\bytm\b|yield to maturity|\bcoupon\b", q, I))),
     ("option", lambda q: bool(re.search(r"black[- ]?scholes|\b(call|put) options?\b|\boption (price|premium)\b", q, I))),
     ("sip_fv", lambda q: bool(re.search(r"\bsip\b|\b(invest|put|save|deposit)\w*\b.{0,30}\b(every|each|per|a) month\b|\bmonthly (investment|deposit)\b", q, I))),
@@ -27,15 +33,21 @@ ROUTES = [  # (type, test) in priority order
     ("percent", lambda q: bool(re.search(r"\bgst\b|\d+(\.\d+)?\s*%\s*of\b|\bper ?cent of\b|\bpercentage of\b|\bdiscount of\b|\bmarkup\b", q, I))),
 ]
 EXCLUSIVE = {"goal_saving": {"sip_fv", "lump_fv", "present_value"}, "present_value": {"lump_fv"}, "years": {"lump_fv"},
-             "emi": {"sip_fv"}, "cagr": {"lump_fv"}, "sip_fv": {"lump_fv"}}
+             "emi": {"sip_fv", "loan"}, "loan": {"years", "present_value", "lump_fv", "sip_fv"}, "cagr": {"lump_fv"},
+             "sip_fv": {"lump_fv"}}
 
 REQUIRED_TOOLS = {
     "goal_saving": {"goal_saving"}, "present_value": {"tvm", "goal_saving"}, "years": {"tvm"},
-    "real_return": {"real_return"}, "effective_rate": {"effective_annual_rate"}, "emi": {"loan_emi"},
+    "real_return": {"real_return"}, "effective_rate": {"effective_annual_rate"}, "emi": {"loan_emi"}, "loan": {"loan_emi"},
     "cagr": {"tvm"}, "npv_irr": {"npv_irr"}, "bond": {"bond_metrics"}, "option": {"black_scholes"},
     "sip_fv": {"sip_future_value", "goal_saving"}, "lump_fv": {"tvm"}, "percent": {"calculate"},
-    "statement": {"financial_ratios", "balance_sheet_check", "cash_flow_statement", "calculate", "solve_equation"},
+    "statement": {"solve_financials", "financial_ratios", "balance_sheet_check", "cash_flow_statement", "calculate", "solve_equation"},
 }
+
+_LOAN_HINT = ("Loan: call loan_emi with exactly the three values the question gives among principal, annual_rate_pct, "
+              "months (years × 12) and emi (the monthly payment). It solves the missing one: the EMI, the rate the payments imply "
+              "(APR = monthly rate × 12), the number of months, or the amount that can be borrowed. Leave the unknown out; never pass 0 "
+              "for it.")
 
 HINTS = {
     "goal_saving": ("Goal question: call goal_saving(target=<the amount to reach>, years=..., annual_return_pct=...). The target is the FUTURE "
@@ -46,9 +58,14 @@ HINTS = {
               "Never use the Rule of 72."),
     "real_return": "Call real_return(nominal_pct=..., inflation_pct=...). Do not subtract the rates yourself.",
     "effective_rate": "Call effective_annual_rate(nominal_pct=..., periods_per_year=12 for monthly, 4 for quarterly, 2 for half-yearly).",
-    "emi": "Call loan_emi(principal=..., annual_rate_pct=..., months=years × 12).",
+    "emi": _LOAN_HINT,
+    "loan": _LOAN_HINT,
     "cagr": "Call tvm(solve_for='annual_rate_pct', years=..., pv=<starting value>, fv=<ending value>).",
-    "npv_irr": "Call npv_irr(cashflows=[-investment, inflow year 1, ...], discount_rate_pct only if a rate is given).",
+    "npv_irr": ("Call npv_irr(cashflows=[-investment, inflow year 1, ...], discount_rate_pct only if a rate is given), once per project. "
+                "It also returns profitability_index and equivalent_annual_amount. Equivalent annual cost (EAC) of each option: first get "
+                "the life in years (total lifetime ÷ use per year) and the yearly running cost with calculate (for electricity: watts ÷ 1000 "
+                "× hours per year × price per kWh); then cashflows = [-purchase price] followed by -(yearly running cost) once for EVERY "
+                "year of the life, and report equivalent_annual_amount as the EAC (negative = a cost)."),
     "bond": "Call bond_metrics(face, coupon_pct, years, freq, and either ytm_pct or price).",
     "option": "Call black_scholes(spot, strike, years, rate_pct, vol_pct, kind).",
     "sip_fv": "The monthly amount is known: call sip_future_value(monthly=..., annual_return_pct=..., years=...).",
@@ -56,8 +73,12 @@ HINTS = {
     "percent": ("Use calculate. Apply each percentage to the right base: 'X% of A, plus Y% GST on that amount' means A × X/100 × (1 + Y/100). "
                 "Write the whole expression in one call. If you also show an intermediate amount (such as the GST amount alone), compute it with "
                 "calculate too; never work out a figure yourself."),
-    "statement": ("Use financial_ratios, balance_sheet_check or cash_flow_statement with the figures exactly as given; for other "
-                  "statement arithmetic (net income, taxes, equity, working capital, values implied by ratios) use calculate or solve_equation."),
+    "statement": ("Call solve_financials FIRST whenever the question gives statement items or ratios and asks for another item "
+                  "(income statement, ratio algebra, DuPont, growth rates, market value ratios): pass every figure from the question "
+                  "under its name (percent items in percent: 23 percent -> tax_rate_pct=23; ratios as plain numbers: .84 -> 0.84) and "
+                  "targets=[the item(s) asked]. It picks the formulas; never write your own formula, and quote its step values. "
+                  "For a full ratio analysis of pasted statements use financial_ratios; to check a balance sheet use "
+                  "balance_sheet_check; for a cash flow statement use cash_flow_statement."),
 }
 
 

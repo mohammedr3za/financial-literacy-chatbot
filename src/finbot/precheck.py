@@ -58,7 +58,7 @@ def _plain(v: float) -> str:
     return str(int(v)) if float(v).is_integer() else f"{v:.2f}"
 
 
-_QUANTITY = re.compile(r"(?i)(?<![a-z\d])(₹\s*\d|rs\.?\s*\d|\d[\d,]*(\.\d+)?\s*(%|per ?cent|lakhs?|lacs?|crores?|cr\b|k\b)|\d[\d,]*\.\d+|\d{2,})")
+_QUANTITY = re.compile(r"(?i)(?<![a-z\d])(₹\s*\d|rs\.?\s*\d|\$\s*\d|\d[\d,]*(\.\d+)?\s*(%|per ?cent|lakhs?|lacs?|crores?|cr\b|k\b)|\d[\d,]*\.\d+|\d{2,})")
 
 
 def has_quantity(text: str) -> bool:
@@ -106,9 +106,19 @@ _CALC = re.compile(r"(?i)\b(calculate|compute|how much|what (will|would) (be|i|m
 _STATEMENT = re.compile(r"(?i)\b(balance sheet|profit (and|&) loss|p&l|income statement|cash flow statement|cash flows?|"
                         r"ratios?|working capital|current assets?|current liabilit\w+|reserves and surplus|net worth|ebitda|ebit|"
                         r"debtors|creditors|depreciation|dupont|roe|roa|liquidity|leverage)\b")
+_STATEMENT_DOC = re.compile(r"(?i)\b(balance sheet|income statement|profit (and|&) loss|p&l|cash flow statement)\b")
+# corporate-finance items and ratios (textbook problems); "sales" counts only next to income-statement words
+_CORPORATE = re.compile(r"(?i)\b(earnings per share|eps|p/e|price[- ](to[- ])?earnings|market[- ]to[- ]book|book value per share|"
+                        r"enterprise value|times interest earned|cash coverage|equity multiplier|debt[- ](to[- ])?equity|"
+                        r"total debt ratio|asset turnover|inventory turnover|receivables turnover|days'? sales|cost of goods sold|"
+                        r"cogs|gross profit|profit margin|payout ratio|retention ratio|plowback|retained earnings|sustainable growth|"
+                        r"internal growth|operating cash flow|ebt|taxable income|net fixed assets|long[- ]term debt|quick ratio|"
+                        r"current ratio|net working capital)\b"
+                        r"|\bsales\b.*\b(costs?|net income|depreciation|tax rate|profit|turnover|ebit)\b"
+                        r"|\b(costs?|net income|depreciation|profit)\b.*\bsales\b")
 _REGULATORY = re.compile(r"(?i)\b(sebi|rbi|amfi|dicgc|tax\w*|tds|section \d+\w*|rule|regulation|regulat\w+|law|legal|illegal|allowed|"
                          r"ombudsman|complaint|insur\w+|kyc|registered|licen[cs]\w*|circular|guideline|compliance)\b")
-_GIVEN_RATE = re.compile(r"(?i)\b(tax|gst|tds)\s+rate\s+(of\s+)?\d+(\.\d+)?\s*(%|percent|per cent)?|\d+(\.\d+)?\s*(%|percent|per cent)\s+(tax|gst|tds)(\s+rate)?")
+_GIVEN_RATE = re.compile(r"(?i)\b(tax|gst|tds)\s+rate\s+(of\s+|is\s+|at\s+)?\d+(\.\d+)?\s*(%|percent|per cent)?|\d+(\.\d+)?\s*(%|percent|per cent)\s+(tax|gst|tds)(\s+rate)?")
 _INVEST = re.compile(r"(?i)\b(invest\w*|stocks?|shares?|equity|mutual funds?|sip|returns?|portfolio|ipo|bonds?|fd|fixed deposit|"
                      r"gold|real estate|nps|ppf|elss|etf|trading|crypto\w*|savings?)\b")
 
@@ -142,10 +152,13 @@ def precheck(user_text: str, previous_question: str | None = None) -> PrecheckRe
     clean, redactions = redact(user_text)
     normalized, amounts = normalize_amounts(clean)
     has_number = has_quantity(clean)
-    statement = bool(_STATEMENT.search(clean)) and has_number or is_tabular(clean)
+    statement = bool(_STATEMENT.search(clean) or _CORPORATE.search(clean)) and has_number or is_tabular(clean)
     followup = bool(previous_question) and is_followup(clean)
     routed_text = f"{redact(previous_question)[0]} {clean}" if followup else clean
     calc_types = detect_calc_types(routed_text, has_quantity(routed_text), statement)
+    if "npv_irr" in calc_types and not (_CORPORATE.search(clean) or _STATEMENT_DOC.search(clean)):
+        statement = False                                  # a table of project cash flows is not a financial statement
+        calc_types = [k for k in calc_types if k != "statement"]
     usd = bool(re.search(r"\$\s?\d|\bUSD\b|\bdollars?\b", clean, re.I)) and not re.search(r"₹|\brs\.?\s?\d|\binr\b|rupee|lakh|crore", clean, re.I)
     flags = {
         "currency": "USD" if usd else "INR",

@@ -48,6 +48,8 @@ START → precheck → retrieve → agent ⇄ tools → review → present → E
   - Its context is the trust-policy system prompt, the precheck flags, the sources, and the conversation.
   - A turn is limited to 6 tool iterations.
 - **tools** runs the deterministic Python tools in section 4. For the three statement tools it first checks **input grounding**: every number in the arguments must appear in the user's message (as written, or as a lakh/crore conversion shown by precheck). A call with an invented figure is not run; the model gets an error naming the figure and retries. Zero values count as not given. One exception: a working-capital change is accepted if it exactly equals the difference of two figures in the message (the guard verifies the subtraction).
+  - `solve_financials` is grounded the same way, with unit checks: a `*_pct` item takes the percent number ("23 percent" → 23; ".23" → 23), and a ratio is a plain number (".84" → 0.84; a "40 percent" debt ratio → 0.4). "$4.5 million" counts as 4500000, and numbers sent as strings are checked too.
+  - **Invented zero rates:** for `loan_emi`, `tvm`, `sip_future_value` and `goal_saving`, a rate of 0 is sent back as an error unless the question says 0%, zero, interest-free or no interest. A small model fills an unknown rate with 0 (the sailboat APR question).
 - **review** is deterministic. It checks the final answer for:
   1. guarantee language, such as "guaranteed returns" or "will definitely";
   2. a calculation question answered with numbers but no tool call;
@@ -57,9 +59,12 @@ START → precheck → retrieve → agent ⇄ tools → review → present → E
   6. a citation such as `[S3]` that does not match a provided source (a fake citation);
   7. an Indian rule, tax, or regulation claim with no source and no clear "I cannot verify this";
   8. a website outside the official allowlist (SEBI, RBI, Income Tax, AMFI, DICGC, SCORES, IRDAI, PFRDA, NSE, BSE, NSDL, CDSL) or the provided sources;
-  9. on Indian rule or tax questions, a percentage or rupee amount that appears in none of: the sources, the question, or a calculator result.
+  9. on Indian rule or tax questions, a percentage or rupee amount that appears in none of: the sources, the question, or a calculator result;
+  10. an answer that names an internal tool (`loan_emi`, `calculate(`, `solve_financials`, ...) or narrates a call ("the function was called"). The note says: give the result in plain words; do not describe tool calls.
 
-  On the first failure it appends a reviewer note listing the issues and routes back to the agent once. If the answer still fails, it ends the turn and appends the standard footer: *"This is general information, not investment advice. Verify with official sources or a SEBI-registered investment adviser."*
+  For calculation answers, a figure that is not in the evidence may still pass if the checker recomputes it as one step (+ − × ÷) from two numbers the answer itself shows and that are verified, or from 1, 12, 100 or 365. A bare result such as a wrong PI of 1.153 no longer passes.
+
+  On the first failure it appends a reviewer note listing the issues and routes back to the agent once. If the answer still fails, it ends the turn and appends the standard footer (if the rewrite is empty, a short "I could not complete this answer reliably" message is shown instead of the footer alone): *"This is general information, not investment advice. Verify with official sources or a SEBI-registered investment adviser."*
 
 ### 3.2 State
 - `messages` uses the `add_messages` reducer and is append-only.
@@ -74,9 +79,9 @@ Every tool is a pure Python function. It returns JSON containing `inputs`, `form
 | `calculate(expression)` | Arithmetic through an AST whitelist: numbers, `+ - * / ** %`, parentheses, and `sqrt log ln exp abs round min max`. Anything else is rejected. |
 | `solve_equation(equation, solve_for)` | Solves with SymPy. Input passes a character whitelist and must not contain `__`, attribute access, quotes, or brackets. Returns all real solutions. |
 | `tvm(solve_for, annual_rate_pct, years, pv, pmt, fv, periods_per_year=1, when)` | Time value of money for savings and growth. All amounts are **positive**: `pv` is the starting amount, `pmt` is the regular deposit per period, `fv` is the target. Solves for `fv`, `pv`, `pmt`, `years`, or `annual_rate_pct`. Compounding happens `periods_per_year` times. CAGR is `tvm` solving for `annual_rate_pct` with `pmt=0`. Loans use `loan_emi`. |
-| `loan_emi(principal, annual_rate_pct, months)` | Returns EMI, total payment, total interest, and the first-year principal and interest split. |
+| `loan_emi(principal, annual_rate_pct, months, emi)` | Takes exactly three of the four and solves the missing one: the EMI; the rate (monthly rate by bisection, APR = monthly rate × 12, plus the effective annual rate); the months (rounded up, with a smaller final payment and the exact fractional months); or the principal (present value of the payments). Returns total payment, total interest, the first-year principal and interest split, and the year-wise schedule. The schema is strict. |
 | `sip_future_value(monthly, annual_return_pct, years, step_up_pct=0)` | Payment at the start of each month, compounded monthly, with an optional annual step-up. Returns the corpus, amount invested, and gain. |
-| `npv_irr(cashflows, discount_rate_pct=None)` | Returns NPV (when a rate is given) and IRR, using Newton's method with a bisection fallback. |
+| `npv_irr(cashflows, discount_rate_pct=None)` | Returns NPV (when a rate is given) and IRR, using Newton's method with a bisection fallback. With a rate it also returns the profitability index (PV of later flows ÷ initial investment), the PV of future cash flows, the annuity factor, and the equivalent annual amount (NPV ÷ annuity factor; the EAC when the flows are costs). |
 | `bond_metrics(face, coupon_pct, years, freq, ytm_pct=None, price=None)` | Takes exactly one of `ytm_pct` or `price`, and returns price or YTM plus Macaulay and modified duration. |
 | `black_scholes(spot, strike, years, rate_pct, vol_pct, kind)` | European call or put price with delta, gamma, vega, theta, and rho. |
 
@@ -85,7 +90,7 @@ Every tool is a pure Python function. It returns JSON containing `inputs`, `form
   - `goal_saving(target, years, annual_return_pct, current_savings=0, step_up_pct=0)` gives the monthly SIP needed to reach a target. It verifies itself by recomputing the target from the answer.
   - `real_return(nominal_pct, inflation_pct)` gives the real return.
   - `effective_annual_rate(nominal_pct, periods_per_year)` gives the effective annual rate.
-- **Question-type router (deterministic):** precheck detects common types and names the required tool in the pre-check notes, with how to map the numbers. Types: goal saving, loan EMI, SIP future value, lump-sum growth, present value, CAGR, years to double or reach a goal, real return, effective rate, NPV/IRR, bond, option, GST and percentages, and statements.
+- **Question-type router (deterministic):** precheck detects common types and names the required tool in the pre-check notes, with how to map the numbers. Types: goal saving, loan EMI, loan (rate, months or affordable principal: borrow/loan/mortgage with payment, instalment, EMI, APR or afford wording), SIP future value, lump-sum growth, present value, CAGR, years to double or reach a goal, real return, effective rate, NPV/IRR (including profitability index and equivalent annual cost), bond, option, GST and percentages, and statements. Statement questions (statement items or ratios given, another item asked) must call `solve_financials` first.
 - **Routing enforcement:** if a detected type is answered without one of its required tools, review fails with a note naming the right tool.
 - **No unsourced figures in calculations:** for calculation answers, every rupee amount and percentage must match the question or a tool output within 0.5% (for rounding). Otherwise review fails. Mental arithmetic, such as the Rule of 72, is not allowed.
 
@@ -94,6 +99,7 @@ Every tool is a pure Python function. It returns JSON containing `inputs`, `form
 |---|---|
 | `financial_ratios(...)` | Takes any subset of named statement items (current assets and liabilities, inventory, cash, receivables, payables, total assets, liabilities, equity, debt, revenue, COGS, gross profit, EBIT, interest, net income, operating cash flow, capex, depreciation). Computes every ratio those items allow: liquidity, leverage, profitability, efficiency, cash, and a DuPont check. Each ratio comes with its formula. |
 | `balance_sheet_check(assets, liabilities, equity)` | Takes items and amounts per section. Returns section totals, whether assets equal liabilities plus equity (and the difference if not), and a common-size % of total assets. |
+| `solve_financials(<named figures>, targets)` | Deterministic solver over a fixed library of textbook identities (Ross, Westerfield & Jordan): income statement (EBIT, EBT, taxes, net income, EBITDA, OCF, addition to retained earnings), liquidity, turnover and days' sales, leverage (debt ratio, D/E, equity multiplier, long-term debt ratio, TIE, cash coverage), profitability, DuPont, payout and retention, sustainable and internal growth, and market value (EPS, P/E, market cap, BVPS, market-to-book, price-sales, EV, EV/EBITDA). The model passes every figure the question gives under its canonical name plus the items asked for. The tool repeatedly solves an identity with exactly one unknown (SymPy, exact rationals) and returns each step (formula, substituted numbers, value), the targets, a derivation table, and warnings for inputs that conflict by more than 0.5% or for impossible negatives. For a target it cannot reach, it names the formulas and the figures still unknown. Unknown names are rejected with suggestions. Formulas come only from the code. |
 | `cash_flow_statement(net_income, non_cash_items, working_capital, investing, financing, opening_cash, closing_cash)` | Indirect method. Each working-capital item gives `type` (current_asset or current_liability) and either `change` or `opening` and `closing`. The tool applies the sign rules. Returns CFO, CFI, CFF, net change, closing cash, and a reconciliation against a given closing cash. |
 
 ### 4.2 Tables
@@ -107,6 +113,7 @@ Every tool is a pure Python function. It returns JSON containing `inputs`, `form
   - all three statement tools.
 - A deterministic `present` step after `review` appends each tool table to the final answer as a markdown table, so the CLI, the benchmark log and the app all show the same exact table. Tables are capped at 60 rows.
 - The prompt tells the model not to copy tool tables, and to use a compact markdown table whenever it compares options or lists figures itself.
+- Because tables render below the answer, "the table above" (or "the above table") in the answer is rewritten to "the table below" when a tool table is attached.
 
 ## 5. Trust policy (system prompt), mapped to the rubric
 1. **Accuracy:** Every number in an answer comes from a tool, and the answer shows the inputs used.
@@ -119,13 +126,25 @@ Every tool is a pure Python function. It returns JSON containing `inputs`, `form
 The bot never asks for personal or account details, and it replies in the user's language.
 
 ## 6. Knowledge base
-- `kb/raw/books/` holds finance books.
-  - The default is OpenStax *Principles of Finance 2e* (CC BY-NC-SA 4.0).
+- User requirement (2026-10-16): at minimum, personal finance, corporate finance, and Indian guidelines. The corpus is 26 public documents in three folders, and every file has one row in `kb/sources.csv`.
+- `kb/raw/personal/` holds personal-finance guides (5).
+  - NCFE: *Financial Education Handbook for New Entrants at Workplace* (2024).
+  - RBI: *Financial Awareness Messages (FAME)*, 4th edition (2024).
+  - SEBI: *Booklet on Securities Market: Understanding from Investor's Perspective*.
+  - NPS Trust (PFRDA): *All Citizen Model FAQ*.
+  - IRDAI: *Handbook on Insurance*. **Outdated** (legacy edition, c. 2014-15): use it for insurance basics only, because its complaint and regulatory sections are out of date.
+- `kb/raw/books/` holds the corporate finance and accounting books (2).
+  - OpenStax *Principles of Finance 2e* (CC BY-NC-SA 4.0), the default.
+  - OpenStax *Principles of Accounting, Volume 1: Financial Accounting* (CC BY-NC-SA 4.0).
   - The user's own books are private. They are never committed or published, and they are never included in released weights or data.
-- `kb/raw/guidelines/` holds the Indian guidelines.
-  - SEBI: Investor Charter, Investment Advisers Regulations, finfluencer circular, mutual-fund risk-o-meter, and the AI/ML consultation paper.
-  - RBI: Integrated Ombudsman Scheme 2021, BE(A)WARE booklet, and the FREE-AI framework report.
-  - Others: AMFI investor-awareness basics, the DICGC deposit-insurance FAQ, and Income Tax rules on virtual digital assets.
+  - The McGraw Hill question set is a test set only and is never indexed.
+- `kb/raw/guidelines/` holds the Indian guidelines (19).
+  - SEBI: Investor Charter (December 2024), Investment Advisers Regulations 2013 (amended up to November 2025), Investor Charter for Investment Advisers (2025), finfluencer circular (2024), mutual-fund risk-o-meter circular (2020), FAQs for Mutual Fund Investors (2024), and the AI/ML consultation paper (2025).
+  - RBI: Integrated Ombudsman Scheme 2026 (in force from 2026-07-01), BE(A)WARE fraud booklet (2022), FREE-AI committee report (2025), Digital Lending Directions 2025, and the Commercial Banks KYC Directions 2025 (updated as on 2026-10-01).
+  - RBI Integrated Ombudsman Scheme 2021: **superseded** by the 2026 scheme. It is kept for history only.
+  - Income Tax: ITR-2 FAQ (virtual digital assets), *Taxation of Virtual Digital Assets*, *Key Highlights of Finance Act, 2025* (new-regime slabs and the section 87A rebate), and *Salaried Individuals for AY 2026-27* (old vs new regime).
+  - Income Tax caveat: these documents use the section numbers of the Income-tax Act, 1961 (115BAC, 115BBH, 194S, 87A). The Income-tax Act, 2025 has applied since 2026-04-01, so some section numbers have changed.
+  - Others: AMFI *Mutual Funds Made Simple* pocket guide and the DICGC deposit-insurance booklet.
 - `kb/sources.csv` has the columns `file, title, publisher, url, retrieved_on (YYYY-MM-DD), license`.
 - `kb/index/` holds the derived files `chunks.jsonl` and `embeddings.npy`. Each chunk has the fields `id, file, title, url, page, text`.
 - Search is hybrid: BM25 and `bge-m3` cosine similarity, combined with reciprocal-rank fusion.
@@ -224,3 +243,5 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
 - 2026-10-16: The user set a 5 GB cap on stored reports. After the cap, no more reports are accepted.
 - 2026-10-16: The report form asks for an optional name; blank means anonymous.
 - 2026-10-16: The user clarified: 5 GB is for all reports combined, and each report is limited to a few MB (set to 2 MB, trimmed rather than refused).
+- 2026-10-16: KB rebuilt with 26 documents, 3,934 chunks (was 15 documents, 1,724 chunks), to meet the user's minimum of personal finance, corporate finance and Indian guidelines. Added a `kb/raw/personal/` folder (NCFE, RBI FAME, SEBI securities-market booklet, NPS FAQ, IRDAI handbook), OpenStax *Principles of Accounting Vol 1* (1,702 chunks), and 6 guidelines (Income Tax VDA PDF, Finance Act 2025 highlights, AY 2026-27 salaried page, RBI Digital Lending and KYC Directions). The IRDAI handbook is marked outdated, and RB-IOS 2021 is marked superseded by RB-IOS 2026. Retrieval check went from 10/10 to 9/10: the finfluencer circular fell to rank 6, behind the new SEBI booklet. With `MAX_PER_FILE` lowered from 3 to 2 in `search.py`, the check is 10/10 again, but the circular is at rank 5, outside the 3 chunks the app sends (see PLAN evidence). The old index is backed up outside the repo.
+- 2026-10-16: The user requires that everything calculable goes through tools, with no formula mistakes. Live failures: Tralee COGS (the model invented a ratio formula, −1,124,725 instead of 1,228,200), Nakatomi net income (an invalid `tax_rate_pct` argument), and the sailboat APR (no route, then `loan_emi` with an invented 0% rate and an answer that narrated the tool call). Added `solve_financials` (4.1) as the first tool for statement questions. `loan_emi` now solves for any one unknown. Added the loan route, PI and EAC in `npv_irr` and its route, solver grounding with unit checks, the invented-zero-rate guard, review check 10 (tool narration), stricter one-step recomputation, the table-below rewrite, and an empty-answer fallback (a live LED EAC run ended with only the footer).

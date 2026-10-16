@@ -34,38 +34,101 @@ def _bisect(f, lo: float, hi: float, tol: float = 1e-12, max_iter: int = 300) ->
 
 
 # ---------------------------------------------------------------- loan EMI
-def loan_emi(principal: float, annual_rate_pct: float, months: int) -> dict:
-    _require(principal > 0, "principal must be positive (plain rupees, e.g. 20 lakh = 2000000).")
-    _require(annual_rate_pct >= 0, "annual_rate_pct must be zero or positive.")
-    _require(int(months) == months and months > 0, "months must be a positive whole number.")
-    months = int(months)
-    r = annual_rate_pct / 1200
-    emi = principal / months if r == 0 else principal * r * (1 + r) ** months / ((1 + r) ** months - 1)
-    bal, yi, yp = principal, 0.0, 0.0
-    for _ in range(min(12, months)):
-        interest = bal * r
-        yi += interest
-        yp += emi - interest
-        bal -= emi - interest
-    total = emi * months
-    body, b, t_paid, t_int, t_prin, year = [], principal, 0.0, 0.0, 0.0, 0
-    for start in range(0, months, 12):
+_LOAN_KEYS = ("principal", "annual_rate_pct", "months", "emi")
+
+
+def _pv_payments(emi: float, r: float, n: float) -> float:
+    return emi * n if r == 0 else emi * (1 - (1 + r) ** -n) / r
+
+
+def loan_emi(principal: float | None = None, annual_rate_pct: float | None = None, months: int | None = None,
+             emi: float | None = None) -> dict:
+    """Reducing-balance loan with monthly payments. Give exactly three of principal, annual_rate_pct, months and emi;
+    the missing one is solved. A zero principal, months or EMI means "not given" (none of them can really be zero)."""
+    vals = {"principal": principal, "annual_rate_pct": annual_rate_pct, "months": months, "emi": emi}
+    for k in ("principal", "months", "emi"):
+        if vals[k] == 0:
+            vals[k] = None
+    given = [k for k in _LOAN_KEYS if vals[k] is not None]
+    if len(given) == 4:
+        raise ValueError("All four of principal, annual_rate_pct, months and emi were given. Leave out the one to solve for; "
+                         "never pass 0 for an unknown value.")
+    _require(len(given) == 3, f"Give exactly three of principal, annual_rate_pct, months and emi; the missing one is solved. "
+                              f"Only {', '.join(given) or 'none'} given.")
+    solve = next(k for k in _LOAN_KEYS if vals[k] is None)
+    P, rate, n, pay = vals["principal"], vals["annual_rate_pct"], vals["months"], vals["emi"]
+    _require(P is None or P > 0, "principal must be positive (plain rupees, e.g. 20 lakh = 2000000).")
+    _require(rate is None or rate >= 0, "annual_rate_pct must be zero or positive.")
+    _require(n is None or (int(n) == n and n > 0), "months must be a positive whole number.")
+    _require(pay is None or pay > 0, "emi (the monthly payment) must be positive.")
+    n = int(n) if n is not None else None
+    extra, final_payment = {}, None
+
+    if solve == "emi":
+        r = rate / 1200
+        pay = P / n if r == 0 else P * r * (1 + r) ** n / ((1 + r) ** n - 1)
+        formula = "EMI = P·r·(1+r)^n / ((1+r)^n − 1), r = annual rate / 12, n = months"
+    elif solve == "principal":
+        r = rate / 1200
+        P = _pv_payments(pay, r, n)
+        extra["principal"] = round(P, 2)
+        formula = "P = EMI·(1 − (1+r)^−n) / r, r = annual rate / 12, n = months (present value of the payments)"
+    elif solve == "annual_rate_pct":
+        total = pay * n
+        _require(total >= P - 0.005, f"The payments ({n} × {format_inr(pay)} = {format_inr(total)}) do not even repay the "
+                                     f"principal of {format_inr(P)}, so no rate of zero or more fits.")
+        if total - P < 0.005:
+            r = 0.0
+        else:
+            hi = 0.01
+            while _pv_payments(pay, hi, n) > P:
+                hi *= 2
+                _require(hi <= 100, "No realistic interest rate fits these figures.")
+            r = _bisect(lambda x: _pv_payments(pay, x, n) - P, 1e-15, hi, tol=1e-14)
+        rate = r * 1200
+        extra.update({"annual_rate_pct": round(rate, 4), "monthly_rate_pct": round(r * 100, 6),
+                      "effective_annual_rate_pct": round(((1 + r) ** 12 - 1) * 100, 4)})
+        formula = ("Solve P = EMI·(1 − (1+r)^−n) / r for the monthly rate r (bisection); APR = r × 12; "
+                   "effective annual rate = (1+r)^12 − 1")
+    else:  # months
+        r = rate / 1200
+        _require(pay > P * r + 1e-9, f"The EMI of {format_inr(pay)} does not cover the first month's interest of "
+                                     f"{format_inr(P * r)}, so the loan would never be repaid.")
+        exact = P / pay if r == 0 else -math.log(1 - P * r / pay) / math.log(1 + r)
+        n = max(1, math.ceil(exact - 1e-9))
+        bal = P
+        for _ in range(n - 1):
+            bal = bal * (1 + r) - pay
+        final_payment = bal * (1 + r)
+        extra.update({"months": n, "months_exact": round(exact, 4), "years": round(n / 12, 2),
+                      "final_payment": round(final_payment, 2)})
+        formula = ("n = −ln(1 − P·r/EMI) / ln(1+r), r = annual rate / 12; rounded up to whole payments, "
+                   "the last one smaller (final_payment)")
+
+    # schedule: every payment is the EMI, except a smaller last one when the months were rounded up
+    def paid(k: int) -> float:
+        return final_payment if final_payment is not None and k == n - 1 else pay
+
+    yi = yp = 0.0
+    body, b, t_paid, t_int, t_prin, year = [], P, 0.0, 0.0, 0.0, 0
+    for start in range(0, n, 12):
         year += 1
-        opening, paid, interest_y, prin_y = b, 0.0, 0.0, 0.0
-        for _ in range(min(12, months - start)):
-            i_amt = b * r
-            paid, interest_y, prin_y, b = paid + emi, interest_y + i_amt, prin_y + emi - i_amt, b - (emi - i_amt)
-        t_paid, t_int, t_prin = t_paid + paid, t_int + interest_y, t_prin + prin_y
-        body.append([str(year), group(opening), group(paid), group(interest_y), group(prin_y), group(b if abs(b) >= 0.5 else 0)])
+        opening, paid_y, interest_y, prin_y = b, 0.0, 0.0, 0.0
+        for k in range(start, min(start + 12, n)):
+            i_amt, amt = b * r, paid(k)
+            paid_y, interest_y, prin_y, b = paid_y + amt, interest_y + i_amt, prin_y + amt - i_amt, b - (amt - i_amt)
+        if year == 1:
+            yi, yp = interest_y, prin_y
+        t_paid, t_int, t_prin = t_paid + paid_y, t_int + interest_y, t_prin + prin_y
+        body.append([str(year), group(opening), group(paid_y), group(interest_y), group(prin_y), group(b if abs(b) >= 0.5 else 0)])
     table = make_table(f"Year-wise loan schedule ({symbol()})", ["Year", "Opening balance", "EMI paid", "Interest", "Principal", "Closing balance"],
                        body, total=["Total", "", group(t_paid), group(t_int), group(t_prin), ""])
-    out = _out(
-        {"principal": principal, "annual_rate_pct": annual_rate_pct, "months": months},
-        "EMI = P·r·(1+r)^n / ((1+r)^n − 1), r = annual rate / 12, n = months",
-        {"emi": round(emi, 2), "total_payment": round(total, 2), "total_interest": round(total - principal, 2),
-         "first_year_interest": round(yi, 2), "first_year_principal": round(yp, 2)},
-        money_keys=("emi", "total_payment", "total_interest", "first_year_interest", "first_year_principal"),
-    )
+    total = pay * n if final_payment is None else pay * (n - 1) + final_payment
+    result = {"emi": round(pay, 2), "total_payment": round(total, 2), "total_interest": round(total - P, 2),
+              "first_year_interest": round(yi, 2), "first_year_principal": round(yp, 2), "solved_for": solve, **extra}
+    out = _out({k: vals[k] for k in given}, formula, result,
+               money_keys=tuple(k for k in ("emi", "total_payment", "total_interest", "first_year_interest",
+                                            "first_year_principal", "principal", "final_payment") if k in result))
     out["table"] = table
     return out
 
@@ -209,7 +272,18 @@ def npv_irr(cashflows: list[float], discount_rate_pct: float | None = None) -> d
     npv_at = lambda rate: sum(c / (1 + rate) ** t for t, c in enumerate(cf))  # noqa: E731
     result = {"npv": None, "irr_pct": None}
     if discount_rate_pct is not None:
-        result["npv"] = round(npv_at(discount_rate_pct / 100), 4)
+        r = discount_rate_pct / 100
+        npv = npv_at(r)
+        result["npv"] = round(npv, 4)
+        n = len(cf) - 1
+        if cf[0] < 0:   # profitability index = PV of the later cash flows / initial investment
+            pv_future = npv - cf[0]
+            result["pv_of_future_cash_flows"] = round(pv_future, 4)
+            result["profitability_index"] = round(pv_future / -cf[0], 6)
+        # equivalent annual amount (EAC when the flows are costs): the level annuity over n years with the same NPV
+        annuity_factor = n if r == 0 else (1 - (1 + r) ** -n) / r
+        result["annuity_factor"] = round(annuity_factor, 6)
+        result["equivalent_annual_amount"] = round(npv / annuity_factor, 4)
     has_sign_change = any(a * b < 0 for a, b in zip(cf, cf[1:]) if a and b) or (min(cf) < 0 < max(cf))
     note = None
     if has_sign_change:
@@ -227,7 +301,8 @@ def npv_irr(cashflows: list[float], discount_rate_pct: float | None = None) -> d
     if note:
         result["note"] = note
     out = _out({"cashflows": cf, "discount_rate_pct": discount_rate_pct},
-               "NPV = Σ CF_t/(1+r)^t ; IRR is the r where NPV = 0", result, ("npv",))
+               ("NPV = Σ CF_t/(1+r)^t ; IRR is the r where NPV = 0 ; PI = (NPV − CF_0)/(−CF_0) ; "
+                "equivalent annual amount = NPV / ((1 − (1+r)^−n)/r)"), result, ("npv",))
     rate = discount_rate_pct if discount_rate_pct is not None else result["irr_pct"]
     body, cum, cum_pv = [], 0.0, 0.0
     for t, c in enumerate(cf):

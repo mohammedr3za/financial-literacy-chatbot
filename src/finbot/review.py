@@ -3,6 +3,7 @@ import re
 from dataclasses import dataclass, field
 
 from .routing import REQUIRED_TOOLS, missing_tools
+from .tools.registry import TOOLS_BY_NAME
 
 FOOTER = ("\n\n---\n*This is general information, not investment advice. Verify with official sources "
           "or a SEBI-registered investment adviser.*")
@@ -59,9 +60,13 @@ def unsupported_figures(answer: str, evidence: str, rel_tol: float = 0.0, plain_
     def exact(c: float, v: float) -> bool:   # recomputed figures must match almost exactly (display rounding only)
         return abs(c - v) <= max(abs(v) * 1e-4, 0.006)
 
+    # operands for recomputation: only verified numbers the answer itself shows (its visible working), plus 1, 12, 100, 365
+    shown = {round(float(n.replace(",", "")), 4) for n in re.findall(r"(?<![\w.])\d+(?:,\d+)*(?:\.\d+)?", answer or "")}
+    operands = [a for a in shown if a and (a in allowed_ext or any(close(a, b) for b in allowed if b))] + [1.0, 12.0, 100.0, 365.0]
+
     def one_step(c: float) -> bool:
-        """The checker recomputes simple arithmetic itself: c = x+y, x-y, x*y or x/y for two evidence numbers."""
-        nums = [a for a in allowed_ext if a][:400]
+        """The checker recomputes simple arithmetic the answer shows: c = x+y, x-y, x*y or x/y for two shown, verified numbers."""
+        nums = operands[:200]
         for i, x in enumerate(nums):
             for y in nums[i:]:
                 for v in (x + y, abs(x - y), x * y, x / y if y else None, y / x if x else None):
@@ -87,6 +92,16 @@ def unsupported_figures(answer: str, evidence: str, rel_tol: float = 0.0, plain_
             bad.append(m.group(0).strip())
     return list(dict.fromkeys(bad))
 
+
+# internal tool names must not reach the user. Names that are also English words or acronyms ("calculate", "TVM") count
+# only when written like code: name(, `name`, or "name function/tool".
+_CODE_NAMES = sorted(n for n in TOOLS_BY_NAME if "_" in n)
+_WORD_NAMES = sorted(n for n in TOOLS_BY_NAME if "_" not in n)
+_TOOL_NARRATION = re.compile(
+    rf"\b({'|'.join(_CODE_NAMES)})\b"
+    rf"|\b({'|'.join(_WORD_NAMES)})\s*\(|`({'|'.join(_WORD_NAMES)})`|\b({'|'.join(_WORD_NAMES)})\s+(function|tool)\b"
+    r"|\b(function|tool)s?\s+(was|were|is|has been|have been)\s+(called|invoked|used|run|executed)\b"
+    r"|\b(called|invoked|calling|invoking|ran)\s+the\s+[\w ]{0,25}?\b(function|tool)\b|\btool calls?\b", re.I)
 
 _BUY_CALL = re.compile(r"(?i)\b(you should|i (would |'d )?recommend|i suggest|go ahead and|my (top )?pick is|the best (stock|fund|share) (to buy )?is)"
                        r"\s+(buy(ing)?|sell(ing)?|invest(ing)? in|put(ting)? (your|all)|go(ing)? for)\b")
@@ -157,6 +172,11 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
         codes.append("unverified_regulatory")
         issues.append("No official source was found for this Indian rule or tax question. Say clearly that you cannot verify the details "
                       "and that rules change, then point to the official website. Do not state specific rates or sections as facts.")
+    narration = _TOOL_NARRATION.search(text)
+    if narration:
+        codes.append("tool_narration")
+        issues.append(f"It mentions an internal tool or tool call (\"{narration.group(0)}\"). Give the result in plain words; "
+                      "do not describe tool calls or name tools.")
     allowed = ALLOWED_DOMAINS + tuple(_DOMAIN.findall(" ".join(source_urls)))
     unknown = sorted({d.lower() for d in _DOMAIN.findall(text)
                       if not any(d.lower() == a or d.lower().endswith("." + a) for a in allowed)})
