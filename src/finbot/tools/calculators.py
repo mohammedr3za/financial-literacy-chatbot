@@ -338,3 +338,69 @@ def black_scholes(spot: float, strike: float, years: float, rate_pct: float, vol
     )
     out["table"] = table
     return out
+
+
+# ---------------------------------------------------------------- goal-based saving (SPEC 4.0)
+def _sip_value(monthly: float, i: float, n: int, step_up_pct: float, start: bool) -> tuple[float, list]:
+    """Simulate a monthly SIP; returns final value and per-year rows (year, monthly, invested_year, invested_total, value)."""
+    bal, invested, pay, rows, year_inv = 0.0, 0.0, monthly, [], 0.0
+    for m in range(n):
+        if m and m % 12 == 0:
+            pay *= 1 + step_up_pct / 100
+        bal = (bal + pay) * (1 + i) if start else bal * (1 + i) + pay
+        invested += pay
+        year_inv += pay
+        if (m + 1) % 12 == 0 or m == n - 1:
+            rows.append((m // 12 + 1, pay, year_inv, invested, bal))
+            year_inv = 0.0
+    return bal, rows
+
+
+def goal_saving(target: float, years: float, annual_return_pct: float, current_savings: float = 0.0,
+                step_up_pct: float = 0.0, timing: str = "start") -> dict:
+    _require(target > 0, "target must be positive: the future amount to reach, in plain rupees (1 crore = 10000000).")
+    _require(years > 0 and abs(years * 12 - round(years * 12)) < 1e-9, "years must be positive and a whole number of months.")
+    _require(annual_return_pct > -100, "annual_return_pct must be above -100.")
+    _require(current_savings >= 0 and step_up_pct >= 0, "current_savings and step_up_pct must be zero or positive.")
+    _require(timing in ("start", "end"), "timing must be 'start' (SIP, default) or 'end' of each month.")
+    i, n, start = annual_return_pct / 1200, int(round(years * 12)), timing == "start"
+    grown_savings = current_savings * (1 + i) ** n
+    remaining = max(0.0, target - grown_savings)
+    unit, _ = _sip_value(1.0, i, n, step_up_pct, start)          # value of ₹1/month; the answer is linear in the amount
+    monthly = remaining / unit if remaining > 0 else 0.0
+    final, rows = _sip_value(monthly, i, n, step_up_pct, start)
+    check = final + grown_savings
+    _require(abs(check - target) <= max(1.0, target * 1e-9) or remaining == 0, "Internal check failed: the plan does not reach the target.")
+    lump_today = target / (1 + i) ** n
+    body = [[str(y), group(p), group(iy), group(it), group(v + current_savings * (1 + i) ** (y * 12 if y * 12 <= n else n)),
+             group(v + current_savings * (1 + i) ** min(y * 12, n) - it - current_savings)] for y, p, iy, it, v in rows]
+    table = make_table("Year-wise plan to reach the goal (₹)", ["Year", "Monthly SIP", "Invested in year", "Total invested",
+                                                                "Value at year end", "Gain"], body,
+                       note="Assumes the stated return every year; actual returns vary and are not guaranteed.")
+    out = _out(
+        {"target": target, "years": years, "annual_return_pct": annual_return_pct, "current_savings": current_savings,
+         "step_up_pct": step_up_pct, "timing": timing},
+        "Monthly SIP = (Target − Savings·(1+i)^n) ÷ [((1+i)^n − 1)/i · (1+i if paid at month start)], i = annual return / 12, "
+        "n = months; with step-up, solved on the simulated schedule",
+        {"monthly_required": round(monthly, 2), "total_invested": round(rows[-1][3], 2) if rows else 0.0,
+         "check_target_reached": round(check, 2), "lump_sum_needed_today_instead": round(lump_today, 2),
+         "current_savings_grows_to": round(grown_savings, 2)},
+        money_keys=("monthly_required", "total_invested", "check_target_reached", "lump_sum_needed_today_instead"),
+    )
+    out["table"] = table
+    return out
+
+
+def real_return(nominal_pct: float, inflation_pct: float) -> dict:
+    _require(nominal_pct > -100 and inflation_pct > -100, "Rates must be above -100%.")
+    real = ((1 + nominal_pct / 100) / (1 + inflation_pct / 100) - 1) * 100
+    return _out({"nominal_pct": nominal_pct, "inflation_pct": inflation_pct},
+                "Real return = (1 + nominal) ÷ (1 + inflation) − 1  (Fisher equation)",
+                {"real_return_pct": round(real, 4), "approximation_pct": round(nominal_pct - inflation_pct, 4)})
+
+
+def effective_annual_rate(nominal_pct: float, periods_per_year: int) -> dict:
+    _require(int(periods_per_year) == periods_per_year and periods_per_year >= 1, "periods_per_year must be a whole number ≥ 1.")
+    ear = ((1 + nominal_pct / 100 / periods_per_year) ** periods_per_year - 1) * 100
+    return _out({"nominal_pct": nominal_pct, "periods_per_year": periods_per_year},
+                "EAR = (1 + nominal ÷ m)^m − 1", {"effective_pct": round(ear, 4)})

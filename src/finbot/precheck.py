@@ -5,6 +5,8 @@ Runs before anything reaches the model (SPEC 3.1).
 import re
 from dataclasses import dataclass, field
 
+from .routing import detect as detect_calc_types
+
 # ---- personal data -------------------------------------------------------------
 _EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
 _UPI = re.compile(r"\b[\w.-]{2,}@[a-zA-Z]{2,}\b")
@@ -119,12 +121,14 @@ def precheck(user_text: str) -> PrecheckResult:
     normalized, amounts = normalize_amounts(clean)
     has_number = bool(re.search(r"\d", clean.replace("[REDACTED", "")))
     statement = bool(_STATEMENT.search(clean)) and has_number or is_tabular(clean)
+    calc_types = detect_calc_types(clean, has_number, statement)
     flags = {
+        "calc_types": calc_types,
         "statement_data": statement,
         "guarantee_seeking": bool(_GUARANTEE.search(clean)),
         "personal_advice_request": bool(_ADVICE.search(clean)),
         "high_risk_topic": bool(_HIGH_RISK.search(clean)),
-        "calculation_intent": (bool(_CALC.search(clean)) and has_number) or statement,
+        "calculation_intent": (bool(_CALC.search(clean)) and has_number) or statement or bool(calc_types),
         "regulatory_topic": bool(_REGULATORY.search(clean)),
         "investment_topic": bool(_INVEST.search(clean) or _HIGH_RISK.search(clean)),
         "concept_question": bool(_CONCEPT.search(clean)) and not _PERSONAL.search(clean),

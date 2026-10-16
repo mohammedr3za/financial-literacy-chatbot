@@ -1,4 +1,5 @@
 """System prompt (trust policy, SPEC section 5) and the per-turn context block."""
+from .routing import HINTS
 
 SYSTEM_PROMPT = """You are FinBot, an educational finance assistant for people in India. You explain finance concepts and solve finance problems. You are not a licensed adviser.
 
@@ -27,6 +28,7 @@ _FLAG_NOTES = {
 def context_block(question: str, flags: dict, redactions: list[str], sources: list[dict], rag_status: str) -> str:
     lines = ["[Context for this question, prepared by the system and not written by the user]", "Pre-check notes:"]
     notes = [msg for key, msg in _FLAG_NOTES.items() if flags.get(key)]
+    notes += [f"Required tool: {HINTS[k]}" for k in flags.get("calc_types", []) if k in HINTS]
     if redactions:
         notes.append(f"Personal data was removed from the message ({', '.join(redactions)}). Briefly remind the user not to share such details.")
     lines += [f"- {n}" for n in notes] or ["- none"]

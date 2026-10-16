@@ -44,7 +44,7 @@ def loan_emi(principal: float, annual_rate_pct: float, months: int) -> str:
 
 @tool(parse_docstring=True)
 def sip_future_value(monthly: float, annual_return_pct: float, years: float, step_up_pct: float = 0) -> str:
-    """Future value of a monthly SIP (systematic investment plan). Returns corpus, amount invested and gain.
+    """Future value of a KNOWN monthly SIP amount (systematic investment plan). Returns corpus, amount invested and gain. To find the monthly amount NEEDED for a target, use goal_saving instead.
 
     Args:
         monthly: Monthly investment in plain rupees, e.g. 10000.
@@ -143,6 +143,45 @@ def solve_equation(equation: str, solve_for: str) -> str:
     return _run(_solve_equation, equation=equation, solve_for=solve_for)
 
 
+@tool(parse_docstring=True)
+def goal_saving(target: float, years: float, annual_return_pct: float, current_savings: float = 0.0,
+                step_up_pct: float = 0.0, timing: str = "start") -> str:
+    """Monthly SIP or saving NEEDED to reach a target amount (a goal) in a given number of years. Use this for "how much should I save or invest each month to reach X". Also returns the lump sum needed today instead.
+
+    Args:
+        target: The FUTURE amount to reach, in plain rupees (1 crore = 10000000). Never the monthly amount.
+        years: Years until the goal.
+        annual_return_pct: Assumed yearly return in percent, e.g. 12.
+        current_savings: Money already saved toward the goal today, if the user says so. Default 0.
+        step_up_pct: Yearly increase in the monthly amount in percent, if the user says so. Default 0.
+        timing: "start" for a SIP (default), or "end" if the question says the saving happens at the end of each month.
+    """
+    return _run(C.goal_saving, target=target, years=years, annual_return_pct=annual_return_pct,
+                current_savings=current_savings, step_up_pct=step_up_pct, timing=timing)
+
+
+@tool(parse_docstring=True)
+def real_return(nominal_pct: float, inflation_pct: float) -> str:
+    """Real (inflation-adjusted) return using the exact Fisher formula, not nominal minus inflation.
+
+    Args:
+        nominal_pct: The stated return in percent, e.g. 8 for an FD paying 8%.
+        inflation_pct: Inflation in percent, e.g. 6.
+    """
+    return _run(C.real_return, nominal_pct=nominal_pct, inflation_pct=inflation_pct)
+
+
+@tool(parse_docstring=True)
+def effective_annual_rate(nominal_pct: float, periods_per_year: int) -> str:
+    """Effective annual rate (EAR) of a nominal rate compounded several times a year.
+
+    Args:
+        nominal_pct: The nominal yearly rate in percent, e.g. 12.
+        periods_per_year: Compounding periods per year: 12 monthly, 4 quarterly, 2 half-yearly, 365 daily.
+    """
+    return _run(C.effective_annual_rate, nominal_pct=nominal_pct, periods_per_year=periods_per_year)
+
+
 class _Strict(BaseModel):
     """Unknown argument names raise an error instead of being silently dropped."""
     model_config = ConfigDict(extra="forbid")
@@ -219,6 +258,6 @@ def cash_flow_statement(**kwargs) -> str:
     return _run(S.cash_flow_statement, **kwargs)
 
 
-CALC_TOOLS = [loan_emi, sip_future_value, tvm, npv_irr, bond_metrics, black_scholes, calculate, solve_equation,
-              financial_ratios, balance_sheet_check, cash_flow_statement]
+CALC_TOOLS = [loan_emi, sip_future_value, goal_saving, tvm, real_return, effective_annual_rate, npv_irr, bond_metrics,
+              black_scholes, calculate, solve_equation, financial_ratios, balance_sheet_check, cash_flow_statement]
 TOOLS_BY_NAME = {t.name: t for t in CALC_TOOLS}

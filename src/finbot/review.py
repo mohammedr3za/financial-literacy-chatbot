@@ -2,6 +2,8 @@
 import re
 from dataclasses import dataclass, field
 
+from .routing import REQUIRED_TOOLS, missing_tools
+
 FOOTER = ("\n\n---\n*This is general information, not investment advice. Verify with official sources "
           "or a SEBI-registered investment adviser.*")
 
@@ -41,8 +43,13 @@ def _figures(text: str, claims_only: bool) -> set[float]:
     return out
 
 
-def unsupported_figures(answer: str, evidence: str) -> list[str]:
+def unsupported_figures(answer: str, evidence: str, rel_tol: float = 0.0) -> list[str]:
     allowed = _figures(evidence, claims_only=False)
+
+    def supported(cands: set) -> bool:
+        if cands & allowed:
+            return True
+        return rel_tol > 0 and any(abs(c - a) <= abs(a) * rel_tol for c in cands for a in allowed if a)
     bad = []
     for m in _FIGURE.finditer(answer or ""):
         cur, num, unit = m.groups()
@@ -51,7 +58,7 @@ def unsupported_figures(answer: str, evidence: str) -> list[str]:
             continue
         v = float(num.replace(",", ""))
         candidates = {round(v, 4)} | ({round(v * _UNIT[unit_l], 4)} if unit_l in _UNIT else set())
-        if not candidates & allowed:
+        if not supported(candidates):
             bad.append(m.group(0).strip())
     return list(dict.fromkeys(bad))
 
@@ -83,7 +90,13 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
     if _has_unnegated_guarantee(text):
         codes.append("guarantee_language")
         issues.append("It promises or confirms guaranteed or certain returns. No investment return can be guaranteed; say so plainly.")
-    if flags.get("calculation_intent") and not tools_used:
+    missing = missing_tools(flags.get("calc_types", []), tools_used)
+    if missing:
+        need = sorted({t for k in missing for t in REQUIRED_TOOLS[k]})
+        codes.append("wrong_tool" if tools_used else "no_tool_for_numbers")
+        issues.append(f"This question must be answered with {' or '.join(need)}. Call it with the numbers from the question and use its exact "
+                      "result; do not compute anything yourself.")
+    elif flags.get("calculation_intent") and not tools_used:
         codes.append("no_tool_for_numbers")
         issues.append("The question needs a calculation but no calculator tool was called. Call the right tool and use its exact result.")
     needs_risk = (flags.get("high_risk_topic") or flags.get("guarantee_seeking") or flags.get("personal_advice_request") or (
@@ -121,7 +134,13 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
         codes.append("unlisted_link")
         issues.append(f"It mentions websites that may not exist or are not official: {', '.join(unknown)}. "
                       "Only mention sebi.gov.in, rbi.org.in, incometax.gov.in, amfiindia.com, dicgc.org.in or scores.sebi.gov.in.")
-    if evidence is not None and flags.get("regulatory_topic"):
+    if evidence is not None and flags.get("calculation_intent") and tools_used:
+        bad = unsupported_figures(text, evidence, rel_tol=0.005)
+        if bad:
+            codes.append("unsupported_figures")
+            issues.append(f"These figures do not match any calculator result or the question: {', '.join(bad)}. "
+                          "Use only the exact numbers the tools returned (rounding is fine); do not calculate anything yourself.")
+    elif evidence is not None and flags.get("regulatory_topic"):
         bad = unsupported_figures(text, evidence)
         if bad:
             codes.append("unsupported_figures")
