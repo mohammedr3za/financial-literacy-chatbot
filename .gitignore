@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+.pytest_cache/
+# Knowledge base sources and derived index: private / licensed material, never commit
+kb/raw/
+kb/index/
+# Benchmark outputs with screenshots may contain third-party content
+results/
+bench/screenshots/
+# Fine-tune artifacts
+train/data/
+train/out/
+*.gguf
+*.safetensors
