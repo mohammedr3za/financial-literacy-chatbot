@@ -10,7 +10,7 @@ from finbot.config import get_settings
 from finbot.followups import suggest
 from finbot.graph import FinBot
 from finbot.precheck import redact
-from finbot.reports import save_report, turn_record
+from finbot.reports import ReportsFull, save_report, turn_record
 from finbot.tables import to_html
 
 st.set_page_config(page_title="FinBot", page_icon="✳", layout="centered", initial_sidebar_state="collapsed")
@@ -199,7 +199,10 @@ for idx, m in enumerate(st.session_state.history):
                 note = st.text_area("What was wrong? (optional)", key=f"rnote{idx}", max_chars=1000)
                 if st.button("Send report", key=f"rsend{idx}"):
                     convo = [turn_record(h["trace"]) for h in st.session_state.history[: idx + 1] if h.get("trace")]
-                    st.success(f"Saved for review (report {save_report(convo, note, channel='mac-app')}).")
+                    try:
+                        st.success(f"Saved for review (report {save_report(convo, note, channel='mac-app')}).")
+                    except ReportsFull as exc:
+                        st.warning(str(exc))
             if idx == len(st.session_state.history) - 1:  # follow-up chips under the latest answer only
                 chips = suggest(m["trace"])
                 with st.container(key="followups"):

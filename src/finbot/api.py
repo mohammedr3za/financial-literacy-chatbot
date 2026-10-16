@@ -18,7 +18,7 @@ from collections import OrderedDict
 
 from .attachments import table_text
 from .followups import suggest
-from .reports import MAX_NOTE, save_report, turn_record
+from .reports import MAX_NOTE, ReportsFull, save_report, turn_record
 
 MAX_CHARS, MAX_TURNS, MAX_ATTACH, PER_MINUTE = 4000, 25, 200_000, 10
 STEP_LABELS = {"precheck": "Checking", "retrieve": "Searching sources", "tools": "Calculating", "review": "Reviewing",
@@ -152,7 +152,10 @@ def create_app(bot_factory=None, token: str | None = None) -> FastAPI:
             if log is None or not idx.isdigit() or int(idx) >= len(log):
                 raise HTTPException(status_code=404, detail="That answer can no longer be reported.")
             conversation = log[: int(idx) + 1]
-        return {"ok": True, "report_id": save_report(conversation, req.note, channel="web")}
+        try:
+            return {"ok": True, "report_id": save_report(conversation, req.note, channel="web")}
+        except ReportsFull as exc:
+            raise HTTPException(status_code=507, detail=str(exc)) from None
 
     @app.exception_handler(HTTPException)
     def http_error(_, exc: HTTPException):

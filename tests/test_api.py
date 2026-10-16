@@ -87,3 +87,17 @@ def test_report_rejects_unknown_turn_and_missing_token(tmp_path, monkeypatch):
     assert c.post("/api/report", json={"turn_id": "nosuchthread:0"}, headers=h).status_code == 404
     assert c.post("/api/report", json={"turn_id": "nosuchthread:0"}).status_code == 401
     assert c.post("/api/report", json={"turn_id": "x" * 10, "note": "n" * 1001}, headers=h).status_code == 422
+
+
+def test_reports_stop_at_storage_cap(tmp_path, monkeypatch):
+    monkeypatch.setenv("FINBOT_REPORTS_DIR", str(tmp_path))
+    monkeypatch.setenv("FINBOT_REPORTS_MAX_BYTES", "3000")   # tiny cap for the test
+    c = client(*["A mutual fund pools money from many investors."] * 3)
+    h = {"Authorization": f"Bearer {TOKEN}", "X-Client-IP": "3.3.3.3"}
+    d = done_event(post(c, "What is a mutual fund?").text)
+    assert c.post("/api/report", json={"turn_id": d["turn_id"], "note": "first"}, headers=h).status_code == 200
+    size = (tmp_path / "reports.jsonl").stat().st_size
+    monkeypatch.setenv("FINBOT_REPORTS_MAX_BYTES", str(size + 10))  # next report would exceed the cap
+    r = c.post("/api/report", json={"turn_id": d["turn_id"], "note": "second"}, headers=h)
+    assert r.status_code == 507 and "full" in r.json()["detail"]
+    assert (tmp_path / "reports.jsonl").stat().st_size == size        # nothing written, nothing deleted

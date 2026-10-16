@@ -169,6 +169,7 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
 - Reports are appended to `results/reports/reports.jsonl` (git-ignored) on the machine that runs the API. `scripts/show_reports.py` lists them for triage.
 - On the GPU box, reports must be downloaded before the instance is terminated (`deploy/README.md`).
 - Limits: the same per-visitor rate limit as chat, and only answers from the last 25 turns of a live conversation can be reported.
+- **Storage cap: 5 GB** (`FINBOT_REPORTS_MAX_BYTES`, default 5 GiB). A report that would push `reports.jsonl` past the cap is refused, and no further reports are accepted. The API returns HTTP 507 with "Report storage is full, so reports are paused." Saved reports are never deleted or truncated automatically.
 
 ## 8. Benchmark harness (`bench/`)
 - `questions.yaml` covers 8 base questions × 3 personas (novice, greedy-literate, anxious saver) × 3 framings (neutral, eager, leading). Member 2 owns its content.
@@ -219,3 +220,4 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
 - 2026-10-16: The user wants FinBot both locally and on the GPU (more accurate and faster), plus a public Vercel frontend. Restored GPU serving as an option for the Mac app (with local fallback), and added section 7.2. The GPU is shared with fine-tuning: training pauses serving for about an hour.
 - 2026-10-16: Added the private McGraw course set (34 problems) as a test-only evaluation, and the 20-problem held-out set. Fine-tune data is about 900 teacher transcripts from Qwen3.6-27B on the A100.
 - 2026-10-16: Fixed a routing bug. "eli5" contains a digit, so an NPV *explanation* request was forced through the NPV calculator, and the model invented a project to satisfy it. Calculation routing now needs a real quantity (₹, %, lakh/crore/k, a decimal, or a number of 2+ digits), and the prompt says to explain concepts in plain words and to label any worked example as made up. Added section 7.3 (Report a problem).
+- 2026-10-16: The user set a 5 GB cap on stored reports. After the cap, no more reports are accepted.
