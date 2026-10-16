@@ -93,7 +93,10 @@ def main() -> int:
                 tests.append((q.get("question") or q.get("q") or "").lower())
     names = tool_names()
     schemas, by_name = current_tools()
-    named = re.compile(r"`(" + "|".join(map(re.escape, names)) + r")`|\b(" + "|".join(map(re.escape, names)) + r")\b|\bthe \w+ tool\b", re.I)
+    # A tool is "named" only when written like code: backticked, snake_case, or name( — plain words like "calculate" are fine
+    snake = [n for n in names if "_" in n]
+    named = re.compile(r"`(" + "|".join(map(re.escape, names)) + r")`|\b(" + "|".join(map(re.escape, snake)) + r")\b|"
+                       r"\b(" + "|".join(map(re.escape, names)) + r")\(|\bthe (" + "|".join(map(re.escape, names)) + r") tool\b")
     drops, seen, keep = Counter(), set(), []
     for path in a.inputs:
         for line in open(path, encoding="utf-8"):
