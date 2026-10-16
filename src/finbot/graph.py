@@ -98,7 +98,8 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         kb = _load_kb(s)
 
     def precheck(state: State) -> dict:
-        r = run_precheck(state.get("user_input", ""))
+        prev = [m for m in state.get("messages", []) if isinstance(m, HumanMessage) and m.name != "reviewer"]
+        r = run_precheck(state.get("user_input", ""), text_of(prev[-1]) if prev else None)
         return {"messages": [HumanMessage(content=r.text)], "question_idx": len(state.get("messages", [])),
                 "flags": r.flags, "redactions": r.redactions, "amounts": r.amounts, "user_input": "",
                 "sources": [], "sources_relevant": False, "best_dense": 0.0, "rag_status": "",

@@ -106,3 +106,30 @@ def test_calc_answer_figures_must_come_from_tools_or_question():
     assert ok.passed, ok.codes
     bad = review_answer("It grows to ₹1,45,000.", _flags(q), ["tvm"], 0, (), evidence)
     assert "unsupported_figures" in bad.codes
+
+
+def test_followup_inherits_previous_question_type():
+    prev = "How much should I save each month to reach ₹1 crore in 15 years at 12%?"
+    f = precheck("What if I already have ₹5 lakh saved?", previous_question=prev).flags
+    assert f["followup"] and "goal_saving" in f["calc_types"]
+    assert precheck("What if I already have ₹5 lakh saved?").flags["calc_types"] == []   # alone, nothing to route
+
+
+def test_long_new_question_is_not_a_followup():
+    prev = "How much should I save each month to reach ₹1 crore in 15 years at 12%?"
+    f = precheck("Explain how the RBI ombudsman scheme handles complaints about bank charges and how long it takes", previous_question=prev).flags
+    assert not f["followup"]
+
+
+def test_followup_without_tool_is_rejected_in_graph():
+    from helpers import ScriptedModel, make_kb, tool_call
+    from finbot.graph import FinBot
+    model = ScriptedModel(responses=[
+        tool_call("goal_saving", {"target": 10000000, "years": 15, "annual_return_pct": 12}, "c1"), "Save ₹19,818.62 a month.",
+        "Step 1: Use the goal_saving function with current savings of ₹5 lakh.",          # describes, does not call
+        tool_call("goal_saving", {"target": 10000000, "years": 15, "annual_return_pct": 12, "current_savings": 500000}, "c2"),
+        "With ₹5 lakh already saved, you need about ₹13,999 a month."])
+    fb = FinBot(model=model, kb=make_kb())
+    fb.ask("How much should I save each month to reach ₹1 crore in 15 years at 12%?", thread_id="fu")
+    t = fb.ask("What if I already have ₹5 lakh saved?", thread_id="fu")
+    assert t["revisions"] == 1 and t["tools"][-1]["args"]["current_savings"] == 500000

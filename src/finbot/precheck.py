@@ -116,13 +116,28 @@ class PrecheckResult:
     flags: dict = field(default_factory=dict)
 
 
-def precheck(user_text: str) -> PrecheckResult:
+_FOLLOWUP_OPENER = re.compile(r"(?i)^\s*(what if|and if|how about|what about|instead|also|same|then|ok|okay|and|but|only|"
+                              r"would it|could i|can i|what would)\b")
+_FOLLOWUP_MARKER = re.compile(r"(?i)\b(instead|already|only|as well|too|same)\b")
+_PRONOUN = re.compile(r"(?i)\b(this|that|it|these|those)\b")
+
+
+def is_followup(text: str) -> bool:
+    words = len(text.split())
+    return words <= 14 and bool(_FOLLOWUP_OPENER.search(text) or _FOLLOWUP_MARKER.search(text)
+                                or (words <= 8 and _PRONOUN.search(text)))
+
+
+def precheck(user_text: str, previous_question: str | None = None) -> PrecheckResult:
     clean, redactions = redact(user_text)
     normalized, amounts = normalize_amounts(clean)
     has_number = bool(re.search(r"\d", clean.replace("[REDACTED", "")))
     statement = bool(_STATEMENT.search(clean)) and has_number or is_tabular(clean)
-    calc_types = detect_calc_types(clean, has_number, statement)
+    followup = bool(previous_question) and is_followup(clean)
+    routed_text = f"{redact(previous_question)[0]} {clean}" if followup else clean
+    calc_types = detect_calc_types(routed_text, bool(re.search(r"\d", routed_text)), statement)
     flags = {
+        "followup": followup and bool(calc_types),   # only calculation follow-ups get the "reuse the numbers" note
         "calc_types": calc_types,
         "statement_data": statement,
         "guarantee_seeking": bool(_GUARANTEE.search(clean)),

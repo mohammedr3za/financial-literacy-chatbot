@@ -21,6 +21,7 @@ _FLAG_NOTES = {
     "personal_advice_request": "The user is asking what to buy, sell or invest in. Give information, not a pick, and suggest a SEBI-registered investment adviser.",
     "high_risk_topic": "This is a high-risk topic. State the specific risks clearly.",
     "calculation_intent": "This needs a calculation. Call the right calculator tool.",
+    "followup": "This is a follow-up to the previous question: reuse its numbers unless the user changes them, and call the tool again; never describe a tool call in words.",
     "statement_data": "The user gave financial statement data. Use financial_ratios, balance_sheet_check or cash_flow_statement; keep the user's units.",
 }
 
