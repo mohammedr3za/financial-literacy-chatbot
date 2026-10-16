@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from collections import OrderedDict
 
 from .attachments import table_text
+from .config import get_settings
 from .followups import suggest
 from .reports import MAX_NAME, MAX_NOTE, ReportsFull, save_report, turn_record
 
@@ -101,7 +102,8 @@ def create_app(bot_factory=None, token: str | None = None) -> FastAPI:
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok"}
+        s = get_settings()   # tells the site where the model runs: vLLM on a cloud GPU, or Ollama on this machine
+        return {"status": "ok", "host": "cloud" if s.backend == "openai" else "local", "model": s.model}
 
     @app.post("/api/chat")
     def chat(req: ChatRequest, request: Request, authorization: str | None = Header(default=None),

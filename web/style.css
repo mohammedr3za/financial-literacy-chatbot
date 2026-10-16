@@ -7,6 +7,11 @@ main { max-width: 780px; margin: 0 auto; padding: 48px 16px 190px; }
 .eyebrow { font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); font-weight: 500;
   display: flex; align-items: center; gap: .55rem; }
 .star { color: var(--accent); font-size: 15px; letter-spacing: 0; }
+.where { margin-left: auto; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card);
+  letter-spacing: .1em; white-space: nowrap; }
+.where::before { content: "●"; margin-right: .45em; }
+.where.local::before { color: #2E7D32; }
+.where.cloud::before { color: var(--accent); }
 h1 { font-size: clamp(40px, 9vw, 56px); line-height: 1.02; font-weight: 400; letter-spacing: -0.045em; margin: 28px 0 10px; }
 .sub { color: var(--muted); margin: 0 0 32px; }
 .examples { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }

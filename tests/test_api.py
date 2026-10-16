@@ -127,3 +127,11 @@ def test_single_report_is_trimmed_to_its_cap_and_keeps_the_reported_answer(tmp_p
     rec = json.loads(line)
     assert len(line.encode()) <= 4000 and rec["trimmed"] is True
     assert rec["conversation"][-1]["question"] == "turn 4" and rec["conversation"][-1]["answer"].startswith("THE REPORTED ANSWER")
+
+
+def test_health_says_where_the_model_runs(monkeypatch):
+    c = TestClient(create_app(bot_factory=lambda: None, token=TOKEN))
+    monkeypatch.setenv("FINBOT_BACKEND", "openai"); monkeypatch.setenv("FINBOT_MODEL", "qwen3.6-27b")
+    assert c.get("/api/health").json() == {"status": "ok", "host": "cloud", "model": "qwen3.6-27b"}
+    monkeypatch.setenv("FINBOT_BACKEND", "ollama"); monkeypatch.setenv("FINBOT_MODEL", "qwen3:8b")
+    assert c.get("/api/health").json() == {"status": "ok", "host": "local", "model": "qwen3:8b"}

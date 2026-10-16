@@ -24,9 +24,17 @@ function renderExamples() {
   for (const [label, q] of EXAMPLES) { const b = el("button", "chip", label); b.type = "button"; b.onclick = () => ask(q); box.append(b); }
 }
 function setOnline(ok) { online = ok; $("#offline").hidden = ok; $("#send").disabled = !ok || busy; }
+function setWhere(host, model) {
+  const w = $("#where");
+  if (!host) { w.hidden = true; return; }
+  w.textContent = (host === "cloud" ? "Cloud GPU" : "Local Mac") + (model ? " · " + model : "");
+  w.className = "where " + host; w.hidden = false;
+}
 async function health() {
-  try { const r = await fetch("/api/health", { cache: "no-store" }); setOnline(r.ok && (await r.json()).online === true); }
-  catch (_) { setOnline(false); }
+  try {
+    const r = await fetch("/api/health", { cache: "no-store" }); const j = r.ok ? await r.json() : {};
+    setOnline(j.online === true); setWhere(j.online === true ? j.host : null, j.model);
+  } catch (_) { setOnline(false); setWhere(null); }
 }
 
 // Math convention: $$…$$ and \[…\] are display, \(…\) is inline. A single $ is always currency, never math.
