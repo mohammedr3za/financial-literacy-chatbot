@@ -136,7 +136,7 @@ def main() -> int:
     rng = random.Random(3407)
     tools_ = [r for r in keep if r["has_tool_call"]]
     concept = [r for r in keep if not r["has_tool_call"]]
-    cap = int(a.max_concept / (1 - a.max_concept) * len(tools_)) if tools_ else len(concept)
+    cap = int(a.max_concept / (1 - a.max_concept) * len(tools_)) if tools_ and a.max_concept < 1 else len(concept)
     if len(concept) > cap:
         rng.shuffle(concept)
         drops["concept_over_cap"] += len(concept) - cap
