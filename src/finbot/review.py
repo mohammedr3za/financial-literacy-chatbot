@@ -23,6 +23,39 @@ _DOMAIN = re.compile(r"(?i)\b(?:https?://)?((?:[a-z0-9-]+\.)+(?:gov\.in|org\.in|
 ALLOWED_DOMAINS = ("sebi.gov.in", "rbi.org.in", "incometax.gov.in", "incometaxindia.gov.in", "amfiindia.com",
                    "mutualfundssahihai.com", "dicgc.org.in", "irdai.gov.in", "pfrda.org.in", "nseindia.com", "bseindia.com",
                    "nsdl.co.in", "cdslindia.com", "cybercrime.gov.in")
+_FIGURE = re.compile(r"(?i)(?:(₹|rs\.?|inr)\s*)?(?<![\w.])(\d+(?:,\d+)*(?:\.\d+)?)\s*(%|per ?cent|lakhs?|lacs?|crores?|cr\b)?")
+_UNIT = {"lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "lacs": 1e5, "crore": 1e7, "crores": 1e7, "cr": 1e7}
+
+
+def _figures(text: str, claims_only: bool) -> set[float]:
+    """Numbers in text. With claims_only, only percentages and rupee amounts (the figures that matter)."""
+    out = set()
+    for cur, num, unit in _FIGURE.findall(text or ""):
+        unit = (unit or "").lower().replace(" ", "")
+        if claims_only and not (cur or unit):
+            continue
+        v = float(num.replace(",", ""))
+        out.add(round(v, 4))
+        if unit in _UNIT:
+            out.add(round(v * _UNIT[unit], 4))
+    return out
+
+
+def unsupported_figures(answer: str, evidence: str) -> list[str]:
+    allowed = _figures(evidence, claims_only=False)
+    bad = []
+    for m in _FIGURE.finditer(answer or ""):
+        cur, num, unit = m.groups()
+        unit_l = (unit or "").lower().replace(" ", "")
+        if not (cur or unit_l):
+            continue
+        v = float(num.replace(",", ""))
+        candidates = {round(v, 4)} | ({round(v * _UNIT[unit_l], 4)} if unit_l in _UNIT else set())
+        if not candidates & allowed:
+            bad.append(m.group(0).strip())
+    return list(dict.fromkeys(bad))
+
+
 _BUY_CALL = re.compile(r"(?i)\b(you should|i (would |'d )?recommend|i suggest|go ahead and|my (top )?pick is|the best (stock|fund|share) (to buy )?is)"
                        r"\s+(buy(ing)?|sell(ing)?|invest(ing)? in|put(ting)? (your|all)|go(ing)? for)\b")
 
@@ -42,7 +75,7 @@ class ReviewResult:
     issues: list[str] = field(default_factory=list)
 
 
-def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: int, source_urls: tuple = ()) -> ReviewResult:
+def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: int, source_urls: tuple = (), evidence: str | None = None) -> ReviewResult:
     codes, issues = [], []
     text = answer or ""
     if not text.strip():
@@ -88,6 +121,12 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
         codes.append("unlisted_link")
         issues.append(f"It mentions websites that may not exist or are not official: {', '.join(unknown)}. "
                       "Only mention sebi.gov.in, rbi.org.in, incometax.gov.in, amfiindia.com, dicgc.org.in or scores.sebi.gov.in.")
+    if evidence is not None and flags.get("regulatory_topic"):
+        bad = unsupported_figures(text, evidence)
+        if bad:
+            codes.append("unsupported_figures")
+            issues.append(f"These figures are not in the sources, the question or a calculator result: {', '.join(bad)}. "
+                          "Remove them, compute them with a calculator tool, or say you cannot verify them.")
     return ReviewResult(not codes, codes, issues)
 
 

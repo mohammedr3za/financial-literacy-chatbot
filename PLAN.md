@@ -22,10 +22,10 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - **Acceptance:** 10 known-answer queries find the correct source in the top 5 (`tests/test_search.py`).
 
 ## M3 — Graph and CLI (Sat)
-- [ ] `precheck.py` and `review.py`, with unit tests
-- [ ] `prompts.py` (trust policy) and `graph.py` (LangGraph)
-- [ ] `cli.py`
-- [ ] `tests/test_graph.py` with a fake chat model, so no model is needed to run it
+- [x] `precheck.py` and `review.py`, with unit tests
+- [x] `prompts.py` (trust policy) and `graph.py` (LangGraph)
+- [x] `cli.py`
+- [x] `tests/test_graph.py` with a fake chat model, so no model is needed to run it
 - **Acceptance:** all 6 acceptance prompts in SPEC section 10 behave as specified through the CLI.
 
 ## M4 — UI and demo script (Sat PM)
@@ -84,3 +84,22 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - `uv run python scripts/check_retrieval.py` → **10/10** known-answer queries found the right source in the top 5 (8 at rank 1).
 - Threshold calibration: relevant queries scored 0.53–0.75, off-topic queries 0.41–0.48. `FINBOT_MIN_DENSE_SCORE` raised from 0.45 to 0.50, so all 4 off-topic queries are rejected and all 10 known queries stay relevant.
 - Known gap: the Income Tax VDA PDF could not be downloaded automatically (see blockers above).
+
+### 2026-10-16 — Model decision (SPEC changelog)
+`uv run python scripts/compare_models.py qwen3.5:9b-q4_K_M qwen3:8b qwen3.5:4b` (6 acceptance prompts, document search on):
+
+| Model | Acceptance | Median answer | Slowest | Writing speed | Memory |
+|---|---|---|---|---|---|
+| qwen3.5:9b-q4_K_M | 6/6 | 46.0 s | 70.6 s | 7.9 tok/s | 5.4 GB |
+| **qwen3:8b** | 6/6 | **28.2 s** | 66.0 s | 8.9 tok/s | 5.4 GB |
+| qwen3.5:4b | 6/6 | 45.6 s | 73.0 s | 16.5 tok/s | 6.4 GB (4/6 drafts rewritten) |
+
+Shipped: `qwen3:8b`. A manual audit then found invented tax figures, which led to review check 9; retrieval was cut to the top 3 chunks.
+
+### 2026-10-16 — M3 closed
+- `uv run pytest -q` → 128 passed.
+- `uv run python -m finbot.cli --acceptance` on `qwen3:8b` → **6/6**, each answer read by hand. Times were 30.3, 20.8, 53.5 (one rewrite: missing risk note), 19.1, 8.7 and 36.5 s, for a median of about 25 s.
+- Audit notes:
+  - EMI exact (₹17,356.46).
+  - Crypto: correct 30% under 115BBH, 4% cess, Schedule VDA, cited. It names the 1961 Act although the Income-tax Act, 2025 applies from 2026-04-01; this is a corpus gap, and the official VDA PDF needs a manual download.
+  - Convexity: correct concept answer with no citation, which is right because the book index has no "convexity" text.

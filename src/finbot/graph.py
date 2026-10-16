@@ -104,14 +104,16 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         last_ai = next(m for m in reversed(msgs) if isinstance(m, AIMessage))
         answer = text_of(last_ai)
         srcs = state.get("sources", [])
-        result = review_answer(answer, state["flags"], tools_used, len(srcs), tuple(x.get("url", "") for x in srcs))
+        evidence = "\n".join([text_of(msgs[qi])] + [x["text"] for x in srcs]
+                             + [m.content for m in turn if isinstance(m, ToolMessage)])
+        result = review_answer(answer, state["flags"], tools_used, len(srcs), tuple(x.get("url", "") for x in srcs), evidence)
+        prior = state.get("review", {}).get("first_draft_codes", [])
         if result.passed:
-            return {"review": {"passed": True, "codes": [], "footer": False}}
+            return {"review": {"passed": True, "codes": [], "first_draft_codes": prior, "footer": False}}
         if state.get("revisions", 0) < s.max_revisions:
             return {"messages": [HumanMessage(content=reviewer_note(result), name="reviewer")],
                     "revisions": state.get("revisions", 0) + 1,
                     "review": {"passed": False, "codes": result.codes, "first_draft_codes": result.codes}}
-        prior = state.get("review", {}).get("first_draft_codes", [])
         return {"messages": [AIMessage(content=answer + FOOTER, id=last_ai.id)],
                 "review": {"passed": False, "codes": result.codes, "first_draft_codes": prior, "footer": True}}
 

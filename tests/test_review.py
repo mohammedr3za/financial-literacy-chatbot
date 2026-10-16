@@ -85,3 +85,23 @@ def test_unlisted_link_flagged_but_official_and_source_links_allowed():
     assert "unlisted_link" in r.codes and "not official: investor.gov.in." in r.issues[0]
     assert review_answer("Complain at scores.sebi.gov.in or cms.rbi.org.in.", flags(), [], 0).passed
     assert review_answer("Read the book at openstax.org [S1].", flags(), [], 1, ("https://openstax.org/books/x",)).passed
+
+
+def test_invented_tax_figures_are_flagged():
+    from finbot.review import unsupported_figures
+    evidence = "Income from transfer of virtual digital assets is taxed at 30 per cent under section 115BBH."
+    answer = "Crypto gains are taxed at 30% [S1], plus a 10% surcharge and 4% cess, about 32.2% in total."
+    assert unsupported_figures(answer, evidence) == ["10%", "4%", "32.2%"]
+    r = review_answer(answer, flags(regulatory_topic=True), [], 1, (), evidence)
+    assert "unsupported_figures" in r.codes and "32.2%" in r.issues[-1]
+
+
+def test_supported_figures_pass_including_lakh_and_tool_outputs():
+    from finbot.review import unsupported_figures
+    evidence = 'DICGC insures deposits up to Rs. 5,00,000 per depositor. {"formatted": {"tax": "₹1,50,000.00"}}'
+    assert unsupported_figures("Cover is ₹5 lakh per depositor; tax is ₹1,50,000.", evidence) == []
+
+
+def test_figures_check_only_applies_to_regulatory_questions():
+    r = review_answer("If yields rise by 1%, the price falls by about 4%.", flags(), [], 0, (), "")
+    assert r.passed

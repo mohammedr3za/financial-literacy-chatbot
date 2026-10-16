@@ -13,7 +13,7 @@ This starts Ollama, warms up the models, and opens the chat in your browser. Onc
 ## First-time setup on a new Mac
 ```bash
 brew install ollama && brew services start ollama
-ollama pull qwen3.5:9b-q4_K_M     # the chat model (see SPEC for the current choice)
+ollama pull qwen3:8b               # the chat model (see SPEC for the current choice)
 ollama pull bge-m3                # the embedding model for document search
 uv sync                           # Python 3.12 environment
 uv run python -m finbot.kb.ingest # build the document index from kb/raw/
@@ -24,7 +24,7 @@ uv run python -m finbot.kb.ingest # build the document index from kb/raw/
 question → precheck → retrieve → agent ⇄ tools → review → answer
 ```
 - **precheck** removes personal data (PAN, Aadhaar, card, account, phone, email, UPI) and rewrites "₹20 lakh" as 2000000.
-- **retrieve** finds the 5 most relevant pages from the books and guidelines.
+- **retrieve** finds the 3 most relevant pages from the books and guidelines.
 - **agent** is the local model. It calls a calculator for every number.
 - **tools** are exact Python calculators: EMI, SIP, time value of money, NPV/IRR, bonds, Black-Scholes, arithmetic, and equations.
 - **review** checks for guarantee language, missing risk warnings, fake citations, unofficial links, and buy or sell calls. It sends the answer back for one rewrite if needed.
@@ -60,4 +60,4 @@ uv run python -m finbot.cli --acceptance  # the 6 acceptance prompts on the real
 ## Licenses
 - OpenStax *Principles of Finance 2e*: CC BY-NC-SA 4.0 (attribution, non-commercial).
 - Regulator documents: public government publications.
-- Models: Qwen (Apache-2.0) and bge-m3 (MIT).
+- Models: Qwen3-8B (Apache-2.0) and bge-m3 (MIT).

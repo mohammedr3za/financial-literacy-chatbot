@@ -15,7 +15,7 @@ from unsloth.chat_templates import train_on_responses_only
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="Qwen/Qwen3.5-9B")
+    ap.add_argument("--base", default="Qwen/Qwen3-8B")
     ap.add_argument("--data", default="train/data/sft.jsonl")
     ap.add_argument("--out", default="train/out")
     ap.add_argument("--epochs", type=float, default=2)

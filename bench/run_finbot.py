@@ -3,7 +3,7 @@
 uv run python bench/run_finbot.py --config rag            # questions.yaml + calc_problems.yaml
 uv run python bench/run_finbot.py --config base --set calc
 uv run python bench/run_finbot.py --config rag --limit 5  # quick smoke run
-Configs: base = no document search, rag = with search, rag_ft = with search on the fine-tuned model (FINBOT_MODEL=finbot-9b).
+Configs: base = no document search, rag = with search, rag_ft = with search on the fine-tuned model (FINBOT_MODEL=finbot-8b).
 Re-running with --out <file> resumes and skips prompts already done.
 """
 import argparse
@@ -44,7 +44,7 @@ def main() -> int:
     ap.add_argument("--out")
     a = ap.parse_args()
     if a.config == "rag_ft":
-        os.environ.setdefault("FINBOT_MODEL", "finbot-9b")
+        os.environ.setdefault("FINBOT_MODEL", "finbot-8b")
     from finbot.graph import FinBot
     bot = FinBot()
     out = Path(a.out) if a.out else ROOT / f"results/finbot-{a.config}-{dt.datetime.now():%Y%m%d-%H%M}.jsonl"

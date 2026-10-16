@@ -3,7 +3,7 @@
 The fine-tune teaches FinBot's *habits*: calling calculators, citing sources, refusing guarantees, and referring personal decisions to a SEBI-registered adviser. Facts still come from document search. The fine-tuned model ships only if it matches or beats the base model on the benchmark (SPEC section 9).
 
 ## 1. Rent a GPU (user action)
-- One GPU with **at least 48 GB**, such as an A100 80 GB, H100, or L40S. It needs room for the 35B teacher in FP8, then a 9B bf16 LoRA (about 22 GB).
+- One GPU with **at least 48 GB**, such as an A100 80 GB, H100, or L40S. It needs room for the 35B teacher in FP8, then an 8B bf16 LoRA (about 20 GB).
 - Providers include RunPod, Vast.ai, and Jarvislabs (Indian, INR billing). Pick an Ubuntu + CUDA image. Budget about 4–6 hours, and check the current hourly rate.
 - Share the SSH host and port. Use a key, not a password.
 
@@ -32,15 +32,15 @@ Search embeddings come from Ollama (`FINBOT_EMBED_URL`, default `http://localhos
 ```bash
 pkill -f "vllm serve"
 pip install -U unsloth unsloth_zoo "transformers>=5"
-python train/finetune.py --base Qwen/Qwen3.5-9B --data train/data/sft.jsonl --out train/out
+python train/finetune.py --base Qwen/Qwen3-8B --data train/data/sft.jsonl --out train/out
 ```
-If the comparison in SPEC picked `qwen3:8b` instead, use `--base Qwen/Qwen3-8B`.
+The base must match the shipped model in SPEC section 2 (currently `qwen3:8b`).
 
 ## 6. Bring it back to the Mac and register it with Ollama
 ```bash
 rsync -av user@gpu:/workspace/finbot/train/out/gguf/ train/out/gguf/
-ollama show qwen3.5:9b-q4_K_M --modelfile | sed "s|^FROM .*|FROM $(ls train/out/gguf/*Q4_K_M*.gguf)|" > train/Modelfile
-ollama create finbot-9b -f train/Modelfile
+ollama show qwen3:8b --modelfile | sed "s|^FROM .*|FROM $(ls train/out/gguf/*Q4_K_M*.gguf)|" > train/Modelfile
+ollama create finbot-8b -f train/Modelfile
 ```
 Copying the base model's Modelfile keeps the chat and tool-calling template identical to training.
 

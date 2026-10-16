@@ -19,7 +19,7 @@ FinBot is designed to embody the team's trust checklist. It is a demonstration o
 |---|---|
 | Machine | The user's Mac (Apple M5, 16 GB). It is both the development machine and the booth machine, and it runs fully offline. |
 | Model server | Ollama (Homebrew service) at `http://localhost:11434` |
-| Chat model | `qwen3.5:9b` (Apache-2.0), **thinking off** by default (`FINBOT_THINKING=off`). Fallbacks: `qwen3:8b` if tool calling is unreliable, then `qwen3.5:4b` if it is too slow. |
+| Chat model | `qwen3:8b` (Apache-2.0, Q4_K_M, 5.4 GB), **thinking off** by default (`FINBOT_THINKING=off`), output capped at 700 tokens. Alternatives measured: `qwen3.5:9b-q4_K_M`, `qwen3.5:4b` (see changelog). |
 | Embeddings | `bge-m3` via Ollama |
 | Language | Python 3.12, managed with `uv` |
 | Orchestration | LangGraph + `langchain-ollama`. `langchain-openai` is used only to point at vLLM during fine-tune data generation. |
@@ -42,7 +42,7 @@ START → precheck → retrieve → agent ⇄ tools → review → END
   - It rewrites amounts written with Indian number words into plain numbers before the model sees them. For example, "₹20 lakh" becomes "₹20 lakh (2000000)" and "1.5 crore" becomes "1.5 crore (15000000)". The M0 spike showed the 9B model reads "20 lakh" as 200000.
   - It sets three flags: `guarantee_seeking`, `personal_advice_request`, and `high_risk_topic` (crypto, F&O, leverage, penny stocks, and similar).
 - **retrieve** runs a hybrid search over the knowledge base for the latest user message.
-  - It keeps the top 5 chunks and labels them `[S1]` to `[S5]` with title, page, and URL.
+  - It keeps the top 3 chunks and labels them `[S1]` to `[S3]` with title, page, and URL.
   - If the best score is below a threshold, it records "no relevant source found".
 - **agent** calls the chat model with the calculator tools bound.
   - Its context is the trust-policy system prompt, the precheck flags, the sources, and the conversation.
@@ -56,7 +56,8 @@ START → precheck → retrieve → agent ⇄ tools → review → END
   5. a specific buy, sell, or hold call when personal advice was requested;
   6. a citation such as `[S3]` that does not match a provided source (a fake citation);
   7. an Indian rule, tax, or regulation claim with no source and no clear "I cannot verify this";
-  8. a website outside the official allowlist (SEBI, RBI, Income Tax, AMFI, DICGC, SCORES, IRDAI, PFRDA, NSE, BSE, NSDL, CDSL) or the provided sources.
+  8. a website outside the official allowlist (SEBI, RBI, Income Tax, AMFI, DICGC, SCORES, IRDAI, PFRDA, NSE, BSE, NSDL, CDSL) or the provided sources;
+  9. on Indian rule or tax questions, a percentage or rupee amount that appears in none of: the sources, the question, or a calculator result.
 
   On the first failure it appends a reviewer note listing the issues and routes back to the agent once. If the answer still fails, it ends the turn and appends the standard footer: *"This is general information, not investment advice. Verify with official sources or a SEBI-registered investment adviser."*
 
@@ -120,8 +121,7 @@ The bot never asks for personal or account details, and it replies in the user's
 ## 9. Fine-tune (optional, Sunday, rented GPU)
 - **Teacher:** `Qwen3.6-35B-A3B` (Apache-2.0) served by vLLM with `--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3`.
 - **Data:** About 1,500 questions are generated from KB chunks across the personas and framings. Each one is run through **this graph** with the teacher as the model. A transcript is kept only if it passes review and its numeric checks. Questions with cosine similarity above 0.85 to any benchmark question are removed.
-- **Training:** An Unsloth LoRA on `Qwen3.5-9B` (bf16 LoRA, r=16, 2 epochs, max sequence 4096), exported to GGUF Q4_K_M, then `ollama create finbot-9b`.
-- **Fallback:** If GGUF export fails, use `Qwen3-8B` as the base.
+- **Training:** An Unsloth LoRA on `Qwen/Qwen3-8B`, the same base as the shipped model (bf16 LoRA, r=16, 2 epochs, max sequence 4096), exported to GGUF Q4_K_M, then `ollama create finbot-8b` using the base model's Ollama template.
 - **Ship rule:** The fine-tuned model replaces the base only if it matches or beats it on calculation accuracy and the rubric sample. Both results are recorded either way.
 
 ## 10. Acceptance prompts (must pass before the chatbot is called done)
@@ -146,3 +146,5 @@ The bot never asks for personal or account details, and it replies in the user's
 - 2026-10-16: `tvm` contract changed from the numpy-financial sign convention to positive amounts with annual rate and years. Reason: small models get sign conventions and per-period rates wrong; the tool now does those conversions.
 - 2026-10-16: M0 spike result. `qwen3.5:9b` kept, with thinking off (4/5 correct, median 7.8 s; thinking on was 4/5 at 26.3 s). Added lakh/crore normalization to precheck because the model passed principal=200000 for "₹20 lakh".
 - 2026-10-16: Review checks 6–8 added after the first end-to-end run. With no documents indexed, the model cited a non-existent `[S1]`, invented a crypto tax rule ("20% with indexation after 36 months"; the real rule is a flat 30% under section 115BBH), and gave an unofficial link. The prompt now also asks for short answers (about 120 words) and plain-text formulas.
+- 2026-10-16: Model switched from `qwen3.5:9b` to `qwen3:8b`. The `qwen3.5:9b` default variant (nvfp4/MLX) used 10.6 GB and made the Mac swap. On the 6 acceptance prompts with document search, all three candidates passed; median answer time was qwen3:8b 28.2 s, qwen3.5:9b-q4_K_M 46.0 s, qwen3.5:4b 45.6 s (4/6 drafts needed a rewrite). The fine-tune base follows the model: `Qwen/Qwen3-8B`.
+- 2026-10-16: Review check 9 added (unsupported figures on Indian rule questions). Audit found qwen3:8b adding a "10% surcharge" and "32.2% effective rate" that were in no source. Retrieval now passes the top 3 chunks instead of 5 to cut noise and prompt length.

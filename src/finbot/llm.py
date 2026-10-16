@@ -7,7 +7,7 @@ def get_chat_model(settings: Settings | None = None):
     if s.backend == "ollama":
         from langchain_ollama import ChatOllama
         return ChatOllama(model=s.model, base_url=s.base_url, reasoning=s.thinking, num_ctx=s.num_ctx,
-                          temperature=s.temperature, keep_alive="60m")
+                          temperature=s.temperature, num_predict=s.max_output_tokens, keep_alive="60m")
     if s.backend == "openai":  # vLLM or any OpenAI-compatible server (fine-tune data generation)
         try:
             from langchain_openai import ChatOpenAI
