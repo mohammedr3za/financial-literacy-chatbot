@@ -51,10 +51,30 @@ def _big_plain(num: str) -> bool:
 def unsupported_figures(answer: str, evidence: str, rel_tol: float = 0.0, plain_numbers: bool = False) -> list[str]:
     allowed = _figures(evidence, claims_only=False)
 
+    allowed_ext = allowed | {round(a / 100, 6) for a in allowed} | {round(a * 100, 4) for a in allowed}  # 23 % <-> 0.23
+
+    def close(c: float, a: float) -> bool:
+        return abs(c - a) <= max(abs(a) * rel_tol, 0.005)
+
+    def exact(c: float, v: float) -> bool:   # recomputed figures must match almost exactly (display rounding only)
+        return abs(c - v) <= max(abs(v) * 1e-4, 0.006)
+
+    def one_step(c: float) -> bool:
+        """The checker recomputes simple arithmetic itself: c = x+y, x-y, x*y or x/y for two evidence numbers."""
+        nums = [a for a in allowed_ext if a][:400]
+        for i, x in enumerate(nums):
+            for y in nums[i:]:
+                for v in (x + y, abs(x - y), x * y, x / y if y else None, y / x if x else None):
+                    if v is not None and exact(c, v):
+                        return True
+        return False
+
     def supported(cands: set) -> bool:
-        if cands & allowed:
+        if cands & allowed_ext:
             return True
-        return rel_tol > 0 and any(abs(c - a) <= abs(a) * rel_tol for c in cands for a in allowed if a)
+        if rel_tol > 0 and any(close(c, a) for c in cands for a in allowed if a):
+            return True
+        return rel_tol > 0 and any(one_step(c) for c in cands)
     bad = []
     for m in _FIGURE.finditer(answer or ""):
         cur, num, unit = m.groups()

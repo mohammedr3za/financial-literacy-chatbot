@@ -34,6 +34,7 @@ async function health() {
 const MATH = /(```[\s\S]*?```|`[^`\n]+`)|\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)/g;
 const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 function tex(src, displayMode) {
+  src = String(src).replace(/(\d),(?=\d{2,3}(?!\d))/g, "$1{,}");  // 675,000 -> 675{,}000 so KaTeX does not add a space
   try {
     if (window.katex) return katex.renderToString(src, { displayMode, throwOnError: false, trust: false, strict: "ignore" });
   } catch (_) {}

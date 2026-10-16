@@ -204,3 +204,13 @@ def test_failed_tool_call_does_not_count_as_using_a_tool():
 ])
 def test_given_tax_rate_is_an_input_not_a_rule(q, regulatory):
     assert precheck(q).flags["regulatory_topic"] is regulatory
+
+
+def test_one_step_arithmetic_on_evidence_is_verified_not_flagged():
+    q = "Nakatomi has sales of $675,000, costs of $337,000, depreciation of $81,000, interest of $50,500 and a tax rate of 23 percent. Net income?"
+    ev = q + ' {"steps": [{"value": 257000.0}, {"value": 206500.0}, {"value": 0.77}], "value": 159005.0}'
+    f = precheck(q).flags
+    ok = review_answer("EBT is 206,500, taxes are 206,500 × 0.23 = 47,495, so net income is $159,005.", f, ["calculate"], 0, (), ev)
+    assert ok.passed, ok.codes                      # 47,495 = 206,500 × 0.23 is recomputed by the checker
+    bad = review_answer("Taxes are 47,000, so net income is $159,005.", f, ["calculate"], 0, (), ev)
+    assert "unsupported_figures" in bad.codes       # a wrong figure is still caught
