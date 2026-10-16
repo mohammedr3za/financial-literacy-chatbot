@@ -87,3 +87,11 @@ def test_clean_rejoins_hyphenation():
 
 def test_clean_converts_pdf_glyph_names():
     assert clean("investing /uni20B9.INDIAN_RUPEE_SIGN1,000 and /uni20B913.38 Lakh") == "investing ₹1,000 and ₹13.38 Lakh"
+
+
+def test_query_expansion_spells_out_short_forms():
+    from finbot.kb.search import expand_query
+    assert "artificial intelligence" in expand_query("What are the rules on AI advice for registered advisers?")
+    assert "systematic investment plan" in expand_query("how does a sip work")
+    assert expand_query("bhai ai kya hai") == "bhai ai kya hai"          # lowercase two-letter words are left alone
+    assert expand_query("Explain NPV") == "Explain NPV"

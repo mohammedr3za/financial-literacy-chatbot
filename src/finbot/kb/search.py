@@ -13,6 +13,28 @@ _STOP = set("a an and are as at be by can do does for from has have how i in is 
             "that the this to was what when where which who why will with would you your".split())
 
 
+# Short forms people type vs the words official documents use (e.g. SEBI's IA rules say "Artificial Intelligence").
+# Two-letter forms match only in capitals so ordinary words ("ai" in Hinglish, "ia") are left alone.
+ABBREVIATIONS = {
+    "AI": "artificial intelligence", "ML": "machine learning", "MF": "mutual fund", "MFs": "mutual funds",
+    "IA": "investment adviser", "RA": "research analyst", "FD": "fixed deposit", "RD": "recurring deposit",
+    "nps": "national pension system", "ppf": "public provident fund", "epf": "employees provident fund",
+    "kyc": "know your customer", "upi": "unified payments interface", "sip": "systematic investment plan",
+    "tds": "tax deducted at source", "hra": "house rent allowance", "itr": "income tax return",
+    "nbfc": "non-banking financial company", "elss": "equity linked savings scheme", "ltcg": "long-term capital gains",
+    "stcg": "short-term capital gains", "dicgc": "deposit insurance", "ombudsman": "ombudsman complaint",
+}
+
+
+def expand_query(query: str) -> str:
+    extra = []
+    for short, full in ABBREVIATIONS.items():
+        pattern = rf"\b{short}\b" if len(short) <= 3 and short[:2].isupper() else rf"(?i)\b{short}\b"
+        if re.search(pattern, query) and full.lower() not in query.lower():
+            extra.append(full)
+    return query + (" (" + ", ".join(extra) + ")" if extra else "")
+
+
 def tokenize(text: str) -> list[str]:
     return [t for t in re.findall(r"[a-z0-9]+", text.lower()) if t not in _STOP]
 
@@ -43,6 +65,7 @@ class KnowledgeBase:
         """Returns {"hits": [...], "best_dense": float, "relevant": bool}."""
         if not self.chunks or not query.strip():
             return {"hits": [], "best_dense": 0.0, "relevant": False}
+        query = expand_query(query)
         q = np.asarray(self.embedder.embed_query(query), dtype=np.float32)
         q /= np.linalg.norm(q) + 1e-12
         dense = self.vectors @ q
