@@ -17,6 +17,13 @@ export PATH=$HOME/.local/bin:$PATH
 command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
 [ -d ~/train-env ] || uv venv -q ~/train-env --python 3.12
 . ~/train-env/bin/activate && uv pip install -q unsloth unsloth_zoo trl datasets hf_transfer
+# Latest torch wheels are built for CUDA 13; Lambda's driver is CUDA 12.8 -> NVIDIA's forward-compat libraries
+if [ ! -d /usr/local/cuda-13.0/compat ]; then
+  cd /tmp && wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+  sudo dpkg -i cuda-keyring_1.1-1_all.deb >/dev/null && sudo apt-get update -qq >/dev/null 2>&1
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cuda-compat-13-0 >/dev/null 2>&1
+fi
+export LD_LIBRARY_PATH=/usr/local/cuda-13.0/compat:${LD_LIBRARY_PATH:-}
 python -c "import unsloth, torch; print('unsloth ok, torch', torch.__version__, 'cuda', torch.cuda.is_available())"
 mkdir -p ~/finbot-train
 REMOTE
@@ -26,7 +33,7 @@ train)
   rsync -az train/finetune.py train/data/sft_v2_final.jsonl "ubuntu@$IP:~/finbot-train/"
   $SSH 'cd ~/finbot-train && cat > run_v2.sh <<EOS
 #!/usr/bin/env bash
-export HF_HUB_ENABLE_HF_TRANSFER=1
+export HF_HUB_ENABLE_HF_TRANSFER=1 LD_LIBRARY_PATH=/usr/local/cuda-13.0/compat:\${LD_LIBRARY_PATH:-}
 cd ~/finbot-train
 ~/train-env/bin/python finetune.py --base Qwen/Qwen3-8B --data sft_v2_final.jsonl --out out_v2
 echo EXITED \$?
