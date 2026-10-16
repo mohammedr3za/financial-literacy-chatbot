@@ -92,3 +92,25 @@ def test_model_written_table_is_removed_when_tool_table_exists():
     from finbot.graph import strip_model_tables
     text = "EMI is ₹17,356.46.\n\n| Year | Interest |\n|--|--|\n| 1 | 999 |\n\nSee the schedule below."
     assert strip_model_tables(text) == "EMI is ₹17,356.46.\n\nSee the schedule below."
+
+
+def test_statement_tool_with_invented_figure_is_bounced_then_retried():
+    from finbot.graph import ungrounded_values
+    q = "Current assets 620, current liabilities 350, total assets 1,500, equity 800. Ratios?"
+    assert ungrounded_values({"current_assets": 620, "total_liabilities": 1150, "depreciation": 0}, q) == ["total_liabilities=1150"]
+    assert ungrounded_values({"investing": {"Machinery": -60000}}, "Bought machinery for ₹60,000") == []
+    fb, model = bot(tool_call("financial_ratios", {"current_assets": 620, "current_liabilities": 350, "total_liabilities": 1150}, "c1"),
+                    tool_call("financial_ratios", {"current_assets": 620, "current_liabilities": 350}, "c2"),
+                    "The current ratio is 1.77, which suggests comfortable short-term liquidity.")
+    t = fb.ask(q, thread_id="ground")
+    assert "error" in t["tools"][0]["output"] and "total_liabilities=1150" in t["tools"][0]["output"]["error"]
+    assert t["tools"][1]["output"]["result"]["current_ratio"] == 1.7714
+    assert len(t["tables"]) == 1
+
+
+def test_working_capital_change_accepted_only_if_exact_difference_of_given_figures():
+    from finbot.graph import ungrounded_values
+    q = "Stock decreased from ₹30,000 to ₹22,000. Total assets 1,500, current liabilities 350."
+    assert ungrounded_values({"current_asset_changes": {"Stock": -8000}}, q) == []
+    assert ungrounded_values({"current_asset_changes": {"Stock": -7000}}, q) == ["current_asset_changes.Stock=-7000"]
+    assert ungrounded_values({"total_liabilities": 1150}, q) == ["total_liabilities=1150"]  # a difference, but not a working-capital change

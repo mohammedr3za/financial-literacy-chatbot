@@ -21,8 +21,13 @@ def to_html(t: dict) -> str:
     align = t.get("align") or ["left"] * len(t["columns"])
     bold = set(t.get("bold_rows", []))
     head = "".join(f'<th class="{a}">{html.escape(c)}</th>' for c, a in zip(t["columns"], align))
+    last = len(t["rows"]) - 1
+
+    def cls(i: int) -> str:
+        return " ".join(c for c, on in (("total", i in bold), ("last", i == last and i in bold)) if on)
+
     body = "".join(
-        f'<tr class="{"total" if i in bold else ""}">' + "".join(
+        f'<tr class="{cls(i)}">' + "".join(
             f'<td class="{a}">{html.escape(str(c))}</td>' for c, a in zip(row, align)) + "</tr>"
         for i, row in enumerate(t["rows"]))
     note = f'<div class="fb-note">{html.escape(t["note"])}</div>' if t.get("note") else ""

@@ -175,7 +175,7 @@ class RatioArgs(_Strict):
 
 @tool(args_schema=RatioArgs)
 def financial_ratios(**items) -> str:
-    """Financial ratios from balance sheet and profit-and-loss items: liquidity, leverage, profitability, efficiency, cash flow and DuPont, each with its formula. Pass only the items you have, exactly as given, in the same units (do not convert lakh or crore)."""
+    """Financial ratios from balance sheet and profit-and-loss items: liquidity, leverage, profitability, efficiency, cash flow and DuPont, each with its formula. Pass every matching item that appears in the user's data, not only the ones the question mentions (for example inventory, cash, receivables and payables too), exactly as given and in the same units (do not convert lakh or crore)."""
     return _run(S.financial_ratios, **{k: v for k, v in items.items() if v is not None})
 
 

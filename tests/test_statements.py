@@ -35,6 +35,7 @@ def test_ratios_need_two_items():
 def test_ratio_table_has_formulas():
     rows = financial_ratios(**CO)["table"]["rows"]
     row = next(r for r in rows if r[1] == "Return on equity")
+    assert [r[0] for r in rows].count("Profitability") == 1  # group name shown once
     assert row[2] == "Net income ÷ Total equity" and row[3] == "16.67%"
 
 
@@ -77,3 +78,8 @@ def test_cash_flow_flags_mismatch():
 def test_working_capital_entry_must_be_change_or_pair():
     with pytest.raises(ValueError):
         cash_flow_statement(net_income=1, current_asset_changes={"Stock": [1, 2, 3]})
+
+
+def test_zero_items_are_treated_as_not_given():
+    r = financial_ratios(ebit=260, depreciation=0, revenue=2400)["result"]
+    assert "ebitda" not in r and r["operating_margin_pct"] == 10.8333

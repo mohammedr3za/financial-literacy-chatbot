@@ -55,14 +55,15 @@ _RATIOS = [
 
 
 def _show(v: float, kind: str) -> str:
-    return {"x": f"{v:.2f}", "pct": f"{v:.2f}%", "days": f"{v:.1f} days", "amt": group(v, 2 if abs(v) < 1000 else 0)}[kind]
+    whole = float(v).is_integer() or abs(v) >= 1000
+    return {"x": f"{v:.2f}", "pct": f"{v:.2f}%", "days": f"{v:.1f} days", "amt": group(v, 0 if whole else 2)}[kind]
 
 
 def financial_ratios(**items) -> dict:
     unknown = set(items) - set(_NUM_FIELDS)
     if unknown:
         raise ValueError(f"Unknown items: {sorted(unknown)}. Use: {', '.join(_NUM_FIELDS)}.")
-    d = {k: float(v) for k, v in items.items() if v is not None}
+    d = {k: float(v) for k, v in items.items() if v not in (None, 0)}  # a zero almost always means "not given"
     if len(d) < 2:
         raise ValueError("Give at least two statement items, e.g. current_assets and current_liabilities.")
     if "cogs" not in d and "gross_profit" in d and "revenue" in d:
@@ -84,6 +85,12 @@ def financial_ratios(**items) -> dict:
         rows.insert(at, ["Profitability", "DuPont ROE", "Net margin × Asset turnover × Equity multiplier", f"{dupont:.2f}%"])
     if not result:
         raise ValueError("These items do not allow any standard ratio. Add matching items, e.g. revenue with net_income.")
+    for i in range(len(rows) - 1, 0, -1):  # show each group name once
+        if rows[i][0] == rows[i - 1][0]:
+            rows[i][0] = ""
+    for i, r in enumerate(rows):
+        if not r[0]:
+            r[0] = ""
     table = make_table("Financial ratios", ["Group", "Ratio", "Formula", "Value"], rows,
                        note="Amounts are in the same unit as the inputs.")
     return {"inputs": d, "formula": "see table", "result": result, "formatted": {}, "table": table}

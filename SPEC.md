@@ -47,7 +47,7 @@ START → precheck → retrieve → agent ⇄ tools → review → present → E
 - **agent** calls the chat model with the calculator tools bound.
   - Its context is the trust-policy system prompt, the precheck flags, the sources, and the conversation.
   - A turn is limited to 6 tool iterations.
-- **tools** is a LangGraph `ToolNode` over the deterministic Python tools in section 4.
+- **tools** runs the deterministic Python tools in section 4. For the three statement tools it first checks **input grounding**: every number in the arguments must appear in the user's message (as written, or as a lakh/crore conversion shown by precheck). A call with an invented figure is not run; the model gets an error naming the figure and retries. Zero values count as not given. One exception: a working-capital change is accepted if it exactly equals the difference of two figures in the message (the guard verifies the subtraction).
 - **review** is deterministic. It checks the final answer for:
   1. guarantee language, such as "guaranteed returns" or "will definitely";
   2. a calculation question answered with numbers but no tool call;
@@ -178,3 +178,4 @@ The bot never asks for personal or account details, and it replies in the user's
 - 2026-10-16: Review check 9 added (unsupported figures on Indian rule questions). Audit found qwen3:8b adding a "10% surcharge" and "32.2% effective rate" that were in no source. Retrieval now passes the top 3 chunks instead of 5 to cut noise and prompt length.
 - 2026-10-16: Temperature set to 0 (deterministic), and the prompt now says a rule for one product never applies to another. At temperature 0.3, the crypto tax question gave a wrong "indexation after 36 months" claim in 1 of 3 runs (mixing general capital-gains rules into VDA rules); at temperature 0 it was correct in all runs, at 19–25 s with no rewrites. Deterministic answers also make the benchmark repeatable.
 - 2026-10-16: The user asked for (1) tables wherever possible, especially year-wise interest and principal schedules, (2) balance sheet and cash flow questions and problems, and (3) a much cleaner cream, minimal UI modelled on setu-interface.created.app. Added sections 4.1, 4.2 and 7.1 and the `present` step. Tables come from tool code, so they are exact and cost no model time.
+- 2026-10-16: Tools step changed from LangGraph's ToolNode to a custom node with input grounding for statement tools. A real-model ratio run passed `total_liabilities=1150` and `operating_cash_flow=0`, neither of which was in the data, which made the debt ratio wrong.

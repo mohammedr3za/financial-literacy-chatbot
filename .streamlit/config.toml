@@ -1,0 +1,33 @@
+# FinBot visual theme (SPEC 7.1), modelled on setu-interface.created.app
+[theme]
+base = "light"
+primaryColor = "#C85A32"
+backgroundColor = "#FAF9F5"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#111111"
+linkColor = "#C85A32"
+linkUnderline = false
+font = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+headingFont = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+headingFontWeights = 400
+baseFontSize = 15
+baseRadius = "1.1rem"
+buttonRadius = "full"
+borderColor = "#E4E4E7"
+showWidgetBorder = true
+showSidebarBorder = false
+codeBackgroundColor = "#F1EEE6"
+
+[theme.sidebar]
+backgroundColor = "#F4F1EA"
+secondaryBackgroundColor = "#FFFFFF"
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = "none"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+runOnSave = false

@@ -29,15 +29,15 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - **Acceptance:** all 6 acceptance prompts in SPEC section 10 behave as specified through the CLI.
 
 ## M4 — UI and demo script (Sat PM)
-- [ ] Streamlit `app.py` with the "How I got this" panel, banner, and session cap
-- [ ] `run_demo.sh`
+- [x] Streamlit `app.py` with the "How I got this" panel, banner, and session cap
+- [x] `run_demo.sh`
 - **Acceptance:** works end to end with Wi-Fi off.
 
 ## M4.5 — Tables, financial statements and the cream UI (user request, 2026-10-16)
-- [ ] Year-wise `table` output on `loan_emi`, `sip_future_value`, `tvm`, `npv_irr`, `bond_metrics`, `black_scholes` (test-first)
-- [ ] `financial_ratios`, `balance_sheet_check`, `cash_flow_statement` (test-first, textbook examples)
-- [ ] `present` graph step that appends tool tables to the answer; prompt and precheck updates for pasted statements
-- [ ] Streamlit redesign per SPEC 7.1, with CSV/Excel upload
+- [x] Year-wise `table` output on `loan_emi`, `sip_future_value`, `tvm`, `npv_irr`, `bond_metrics`, `black_scholes` (test-first)
+- [x] `financial_ratios`, `balance_sheet_check`, `cash_flow_statement` (test-first, textbook examples)
+- [x] `present` graph step that appends tool tables to the answer; prompt and precheck updates for pasted statements
+- [x] Streamlit redesign per SPEC 7.1, with CSV/Excel upload
 - **Acceptance:**
   - `uv run pytest` passes.
   - In the browser: the EMI question shows a 20-row year-wise table with a total row that matches the calculator.
@@ -115,3 +115,27 @@ Shipped: `qwen3:8b`. A manual audit then found invented tax figures, which led t
   - EMI exact (₹17,356.46).
   - Crypto: correct 30% under 115BBH, 4% cess, Schedule VDA, cited. It names the 1961 Act although the Income-tax Act, 2025 applies from 2026-04-01; this is a corpus gap, and the official VDA PDF needs a manual download.
   - Convexity: correct concept answer with no citation, which is right because the book index has no "convexity" text.
+
+### 2026-10-16 — M4 closed
+- Browser test (Chrome DevTools against `localhost:8501`):
+  - The SIP example answered ₹50,45,760, which is correct.
+  - The "Details" panel shows the pre-check, the calculator formula, three linked AMFI/SEBI sources, and the review result.
+  - The question counter and example buttons refresh after each answer.
+- Offline check: `lsof` on the app and Ollama processes during a live answer showed **no non-local connections**. The app is now bound to `127.0.0.1`. **The literal Wi-Fi-off test is left for the booth rehearsal (user action).**
+- Fixed during the test: PDF glyph names (`/uni20B9` → ₹, 34 cases in the AMFI booklet) were cleaned and the index rebuilt (0 artifacts left, retrieval still 10/10).
+- Temperature set to 0 after the crypto audit (SPEC changelog).
+
+### 2026-10-16 — M4.5 closed (user request: tables, statements, cream UI)
+- `uv run pytest -q` → **157 passed**.
+- Browser results:
+  - The EMI chip produced a 20-row year-wise schedule plus a total row (paid ₹41,65,552, interest ₹21,65,552, principal ₹20,00,000, closing 0).
+  - The SIP chip produced a 15-row table ending at ₹50,45,760.
+  - A CSV upload of a balance sheet and P&L produced a ratio table (current 1.77, D/E 0.53, coverage 5.78, ROE 18.75% = DuPont).
+- Theme checked by screenshot:
+  - cream `#FAF9F5`, terracotta accent, light tight headline, uppercase labels;
+  - pill chips, a dark user pill on the right, white table cards with sticky header and total row, a quiet "Details" disclosure.
+- Real-model failures found and fixed:
+  1. The cash-flow tool's nested schema produced 3 invalid calls, a silently dropped working-capital argument, an invented profit-on-sale line and a wrong CFO (184 s). Fixed with flat inputs, `[opening, closing]` support, and unknown arguments rejected. Result: 1 call, correct CFO ₹94,000, reconciled, 31 s.
+  2. The ratio tool received invented `total_liabilities=1150`, `operating_cash_flow=0` and `gross_profit=840`. Fixed with an input-grounding guard: statement-tool numbers must appear in the user's message, or be an exact difference for a working-capital change. The model retried with only the given figures, and the result was correct.
+  3. "Leverage" in a ratio question triggered the high-risk flag, forcing a needless rewrite (120 s). Fixed.
+- Regression: `finbot.cli --acceptance` → 6/6 (median about 35 s).

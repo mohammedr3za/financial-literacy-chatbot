@@ -8,16 +8,49 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemM
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
 
 from .config import Settings, get_settings
 from .precheck import precheck as run_precheck
 from .prompts import SYSTEM_PROMPT, context_block
 from .review import FOOTER, review_answer, reviewer_note
 from .tables import to_markdown
-from .tools.registry import CALC_TOOLS
+from .tools.registry import CALC_TOOLS, TOOLS_BY_NAME
 
 _THINK = re.compile(r"<think>.*?</think>", re.S)
+GROUNDED_TOOLS = {"financial_ratios", "balance_sheet_check", "cash_flow_statement"}
+_NUMBER = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|(?<![\w.,])\d+(?:\.\d+)?")
+
+
+def numbers_in(text: str) -> set[float]:
+    return {round(float(n.replace(",", "")), 4) for n in _NUMBER.findall(text or "")}
+
+
+def _arg_numbers(args, path=""):
+    if isinstance(args, bool):
+        return
+    if isinstance(args, (int, float)):
+        yield path, float(args)
+    elif isinstance(args, dict):
+        for k, v in args.items():
+            yield from _arg_numbers(v, f"{path}.{k}" if path else str(k))
+    elif isinstance(args, (list, tuple)):
+        for i, v in enumerate(args):
+            yield from _arg_numbers(v, f"{path}[{i}]")
+
+
+def ungrounded_values(args: dict, user_text: str) -> list[str]:
+    """Numbers in a statement-tool call that do not appear in the user's message (zeros are ignored)."""
+    allowed = numbers_in(user_text)
+    diffs = {round(abs(a - b), 4) for a in allowed for b in allowed}
+    bad = []
+    for p, v in _arg_numbers(args):
+        if v == 0 or round(abs(v), 4) in allowed:
+            continue
+        # a working-capital change may be the model's own subtraction, but only if it is exactly closing − opening of given figures
+        if p.startswith(("current_asset_changes.", "current_liability_changes.")) and "[" not in p and round(abs(v), 4) in diffs:
+            continue
+        bad.append(f"{p}={v:g}")
+    return bad
 
 
 class State(TypedDict, total=False):
@@ -96,6 +129,26 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         return {"messages": [response],
                 "tool_iterations": state.get("tool_iterations", 0) + (1 if getattr(response, "tool_calls", None) else 0)}
 
+    def tools(state: State) -> dict:
+        """Run tool calls. Statement tools must only use figures from the user's message (SPEC 3.1)."""
+        user_text = text_of(state["messages"][state["question_idx"]])
+        out = []
+        for tc in state["messages"][-1].tool_calls:
+            bad = ungrounded_values(tc["args"], user_text) if tc["name"] in GROUNDED_TOOLS else []
+            if bad:
+                content = json.dumps({"error": f"These values are not in the user's data: {', '.join(bad)}. Pass only figures "
+                                      "that appear in the data, exactly as given. Leave out items that are not given, and give "
+                                      "opening and closing balances instead of computing changes yourself."})
+            elif tc["name"] not in TOOLS_BY_NAME:
+                content = json.dumps({"error": f"Unknown tool {tc['name']}."})
+            else:
+                try:
+                    content = TOOLS_BY_NAME[tc["name"]].invoke(tc["args"])
+                except Exception as exc:  # invalid arguments: tell the model so it can retry
+                    content = json.dumps({"error": f"Invalid arguments for {tc['name']}: {exc}"})
+            out.append(ToolMessage(content=content, tool_call_id=tc["id"], name=tc["name"]))
+        return {"messages": out}
+
     def route_after_agent(state: State) -> str:
         return "tools" if getattr(state["messages"][-1], "tool_calls", None) else "review"
 
@@ -140,7 +193,7 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
     g.add_node("precheck", precheck)
     g.add_node("retrieve", retrieve)
     g.add_node("agent", agent)
-    g.add_node("tools", ToolNode(CALC_TOOLS))
+    g.add_node("tools", tools)
     g.add_node("review", review)
     g.add_node("present", present)
     g.add_edge(START, "precheck")
