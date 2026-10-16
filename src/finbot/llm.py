@@ -20,4 +20,4 @@ def get_chat_model(settings: Settings | None = None):
 def get_embedder(settings: Settings | None = None):
     s = settings or get_settings()
     from langchain_ollama import OllamaEmbeddings
-    return OllamaEmbeddings(model=s.embed_model, base_url=s.base_url)
+    return OllamaEmbeddings(model=s.embed_model, base_url=s.embed_url)

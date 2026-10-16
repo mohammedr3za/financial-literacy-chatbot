@@ -18,6 +18,7 @@ class Settings:
     num_ctx: int = field(default_factory=lambda: int(os.getenv("FINBOT_NUM_CTX", "16384")))
     temperature: float = field(default_factory=lambda: float(os.getenv("FINBOT_TEMPERATURE", "0.3")))
     embed_model: str = field(default_factory=lambda: os.getenv("FINBOT_EMBED_MODEL", "bge-m3"))
+    embed_url: str = field(default_factory=lambda: os.getenv("FINBOT_EMBED_URL", "http://localhost:11434"))
     kb_dir: Path = PROJECT_ROOT / "kb"
     top_k: int = 5
     min_dense_score: float = field(default_factory=lambda: float(os.getenv("FINBOT_MIN_DENSE_SCORE", "0.50")))

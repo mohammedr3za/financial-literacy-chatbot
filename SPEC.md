@@ -27,7 +27,7 @@ FinBot is designed to embody the team's trust checklist. It is a demonstration o
 
 The team server (`REDACTED-IP`, 4 CPU cores, 7.6 GB RAM, no GPU) is **not used** in this scope.
 
-Configuration comes from environment variables (`.env`): `FINBOT_MODEL`, `FINBOT_BACKEND` (`ollama`, or `openai` for vLLM), `FINBOT_BASE_URL`, `FINBOT_THINKING` (`on` or `off`), `FINBOT_NUM_CTX` (default 16384), `FINBOT_EMBED_MODEL`.
+Configuration comes from environment variables (`.env`): `FINBOT_MODEL`, `FINBOT_BACKEND` (`ollama`, or `openai` for vLLM), `FINBOT_BASE_URL`, `FINBOT_THINKING` (`on` or `off`), `FINBOT_NUM_CTX` (default 16384), `FINBOT_EMBED_MODEL`, `FINBOT_EMBED_URL` (default the local Ollama), `FINBOT_MIN_DENSE_SCORE` (default 0.50).
 
 ## 3. Architecture (LangGraph)
 ```
