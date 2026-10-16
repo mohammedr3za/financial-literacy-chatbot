@@ -189,3 +189,15 @@ Shipped: `qwen3:8b`. A manual audit then found invented tax figures, which led t
 
 c29 (real return) and c30 (effective annual rate) were correct but computed without a tool. That breaks rule 1, and the review did not catch it because those phrasings are not flagged as calculations.
 Caution: any fix must be checked on *new* problems, not these 30, or the score measures tuning to the test rather than ability.
+
+### 2026-10-17 — M4.6 work: fixes from the live McGraw run on Qwen3.6-27B (no boxes ticked)
+- SPEC changelog 2026-10-17 (four entries): number-free fallback, context budget (compact schemas, compact tool results, output cap per backend, overflow retry, multi-turn history budget), new tool contracts (`tvm` annuities and withdrawals, `loan_emi` payments_per_year, payback, `perpetuity`, `project_cash_flows`, `other_expenses`), conventions, currency clean-up, `hra_50pct_cities`, and the question-bank addendum (Hindi/Tamil amounts, capital gains, decision questions, tool-name clean-up, missing inputs).
+- `uv run --offline pytest -q` → **471 passed** (367 at d924788).
+- Tool schemas on the vLLM path, Qwen tokenizer: 10,408 → 6,213 tokens (all 19 tools). History plus the current turn is held to about 6.1k estimated tokens on vLLM (1,500-token output cap).
+- Exact course-set gold values were checked through the tools outside the repo (13/13 exact).
+- Live smoke on the 27B through the tunnel, one question at a time: all 13 target problems answered with the right tool. The 3 failures in the first pass were fixed and re-run:
+  - bid price: a cents figure was passed as dollars;
+  - two-year balance sheet: grounding errors gave no balancing hint, so the final answer was empty;
+  - a follow-up of a follow-up was not routed and invented a figure.
+  - Before the fixes, 2 problems hit HTTP 400; now 0 do.
+- First drafts still often skip the tool (6 of 18). The reviewer note fixes them, at the cost of one revision (10–40 s).

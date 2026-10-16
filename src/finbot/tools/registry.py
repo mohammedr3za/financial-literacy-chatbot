@@ -34,7 +34,8 @@ def _run(fn, **kwargs) -> str:
 
 
 @tool(parse_docstring=True)
-def sip_future_value(monthly: float, annual_return_pct: float, years: float, step_up_pct: float = 0) -> str:
+def sip_future_value(monthly: float, annual_return_pct: float, years: float, step_up_pct: float = 0,
+                     timing: Literal["start", "end"] = "start") -> str:
     """Future value of a KNOWN monthly SIP amount (systematic investment plan). Returns corpus, amount invested and gain. To find the monthly amount NEEDED for a target, use goal_saving instead.
 
     Args:
@@ -42,28 +43,32 @@ def sip_future_value(monthly: float, annual_return_pct: float, years: float, ste
         annual_return_pct: Assumed yearly return in percent, e.g. 12. This is an assumption, not a guarantee.
         years: Investment period in years.
         step_up_pct: Optional yearly increase in the monthly amount, in percent. Default 0.
+        timing: "start" (a SIP: deposit at the start of each month, default) or "end" (deposit at the end of each month, an ordinary annuity).
     """
-    return _run(C.sip_future_value, monthly=monthly, annual_return_pct=annual_return_pct, years=years, step_up_pct=step_up_pct)
+    return _run(C.sip_future_value, monthly=monthly, annual_return_pct=annual_return_pct, years=years, step_up_pct=step_up_pct,
+                timing=timing)
 
 
 @tool(parse_docstring=True)
 def tvm(solve_for: str, annual_rate_pct: float | None = None, years: float | None = None, pv: float = 0.0,
         pmt: float = 0.0, fv: float | None = None, periods_per_year: int = 1, when: str = "end") -> str:
-    """Time value of money for savings and growth: future value, present value, required deposit, years, or CAGR.
+    """Time value of money for savings and growth: future value, present value, required deposit, years, or CAGR; also plain annuities and level withdrawals.
 
     All amounts are positive plain rupees. Leave out the value you want to solve for.
     Examples: CAGR from 100 to 200 in 5 years -> solve_for="annual_rate_pct", years=5, pv=100, fv=200.
     Monthly saving to reach 1 crore in 15 years at 12% -> solve_for="pmt", annual_rate_pct=12, years=15, fv=10000000, periods_per_year=12.
+    Annuity: PV of 12600 a year for 6 years at 7.5% -> solve_for="pv", pmt=12600, years=6, annual_rate_pct=7.5 (no fv); the result's annuity_values has PV and FV, ordinary and due.
+    Withdrawal: monthly amount that uses up 2500000 over 30 years at 6% -> solve_for="pmt", pv=2500000, years=30, annual_rate_pct=6, periods_per_year=12 (no fv).
 
     Args:
         solve_for: One of "fv", "pv", "pmt", "years", "annual_rate_pct".
         annual_rate_pct: Yearly rate in percent, e.g. 8 for 8%.
         years: Number of years.
         pv: Starting lump sum in plain rupees.
-        pmt: Regular deposit per period in plain rupees.
-        fv: Target or final amount in plain rupees.
+        pmt: Regular deposit (or annuity payment) per period in plain rupees.
+        fv: Target or final amount in plain rupees; leave out for an annuity or a withdrawal.
         periods_per_year: Compounding and deposit periods per year: 1 yearly, 4 quarterly, 12 monthly.
-        when: "end" if deposits are made at the end of each period, "begin" if at the start.
+        when: "end" if payments are at the end of each period (ordinary annuity), "begin" if at the start (annuity due).
     """
     return _run(C.tvm, solve_for=solve_for, annual_rate_pct=annual_rate_pct, years=years, pv=pv, pmt=pmt, fv=fv,
                 periods_per_year=periods_per_year, when=when)
@@ -101,6 +106,57 @@ def equivalent_annual_cost(purchase_cost: float, rate_pct: float, annual_cost: f
     return _run(C.equivalent_annual_cost, purchase_cost=purchase_cost, annual_cost=annual_cost, life_years=life_years,
                 rate_pct=rate_pct, salvage=salvage, power_watts=power_watts, hours_per_year=hours_per_year,
                 price_per_kwh=price_per_kwh, lifetime_hours=lifetime_hours)
+
+
+@tool(parse_docstring=True)
+def perpetuity(cash_flow: float, rate_pct: float, growth_pct: float = 0.0, investment: float | None = None,
+               starts_in_year: int = 1) -> str:
+    """Present value of a perpetuity (cash flows forever), level or growing; with an investment also its NPV, IRR and the break-even growth rate.
+
+    Args:
+        cash_flow: The first yearly cash flow, received at the end of starts_in_year, e.g. 100000.
+        rate_pct: Required return or discount rate in percent, e.g. 11.
+        growth_pct: Constant yearly growth of the cash flow in percent, e.g. 4. Default 0 (a level perpetuity).
+        investment: Initial investment today, if the question gives one; gives NPV, IRR and the break-even growth rate.
+        starts_in_year: Year of the first cash flow. Default 1 (end of the first year).
+    """
+    return _run(C.perpetuity, cash_flow=cash_flow, rate_pct=rate_pct, growth_pct=growth_pct, investment=investment,
+                starts_in_year=starts_in_year)
+
+
+_PER_YEAR = float | list[float] | None
+
+
+class ProjectArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    years: int = Field(description="Project life in years, e.g. 3.")
+    tax_rate_pct: float = Field(description="Tax rate in percent, e.g. 22.")
+    rate_pct: float | None = Field(None, description="Required return or discount rate in percent, for NPV, e.g. 10.")
+    sales: _PER_YEAR = Field(None, description="Yearly sales: one number, or a list with one value per year.")
+    units: _PER_YEAR = Field(None, description="Units sold per year: one number or a list per year (use with price_per_unit).")
+    price_per_unit: float | None = Field(None, description="Selling price per unit. Leave out when solving for the bid price.")
+    costs: _PER_YEAR = Field(None, description="Yearly cash operating costs (pretax), not depreciation.")
+    fixed_costs: _PER_YEAR = Field(None, description="Fixed costs per year.")
+    variable_cost_per_unit: _PER_YEAR = Field(None, description="Variable cost per unit in dollars (or rupees), e.g. 12.5.")
+    variable_cost_cents_per_unit: _PER_YEAR = Field(None, description="Variable cost per unit when the question gives it in cents, as written (.50 cents -> 0.5); the tool divides by 100.")
+    variable_cost_pct: float | None = Field(None, description="Variable costs as a percent of sales, e.g. 25.")
+    ocf: _PER_YEAR = Field(None, description="Operating cash flow per year, only if the question gives it directly.")
+    investment: float = Field(0.0, description="Fixed-asset cost at year 0, e.g. 2300000.")
+    depreciation: Literal["straight_line", "macrs", "none"] = Field("straight_line", description="Depreciation method.")
+    depreciation_years: int | None = Field(None, description="Straight-line tax life if it differs from years.")
+    macrs_rates_pct: list[float] | None = Field(None, description="MACRS rates in percent from the question, e.g. [33.33, 44.45, 14.81, 7.41].")
+    salvage: float = Field(0.0, description="Pretax market (salvage) value of the asset at the end; the tool taxes it.")
+    nwc_initial: float = Field(0.0, description="Net working capital needed at year 0; recovered at the end.")
+    nwc_annual_addition: float = Field(0.0, description="Extra NWC invested in each later year (years 1 to n-1); recovered at the end.")
+    opportunity_cost_now: float = Field(0.0, description="After-tax value today of an asset the firm owns and will use (e.g. land it could sell).")
+    opportunity_value_end: float = Field(0.0, description="After-tax value of that asset at the end of the project.")
+    solve_bid_price: bool = Field(False, description="True to find the price per unit that makes NPV = 0 (needs units).")
+
+
+@tool(args_schema=ProjectArgs)
+def project_cash_flows(**kwargs) -> str:
+    """Capital-budgeting project cash flows from year 0 to the end: OCF = EBIT + depreciation − taxes, straight-line or MACRS depreciation, after-tax salvage = salvage − t × (salvage − book value), NWC invested and recovered, opportunity costs; returns yearly cash flows, NPV, IRR and a table, or the bid price per unit that makes NPV = 0. One call per project. Pass every figure from the question; ignore sunk costs (money already spent, such as a past study or the original price of land)."""
+    return _run(C.project_cash_flows, **kwargs)
 
 
 @tool(parse_docstring=True)
@@ -209,12 +265,14 @@ class LoanArgs(_Strict):
     annual_rate_pct: float | None = Field(None, description=(
         "Yearly interest rate (APR) in percent, e.g. 8.5. Leave out if it is the unknown. Never pass 0 unless the loan is interest-free."))
     months: int | None = Field(None, description="Number of monthly payments, e.g. 20 years = 240. Leave out if it is the unknown.")
-    emi: float | None = Field(None, description="Monthly payment (EMI). Leave out if it is the unknown.")
+    emi: float | None = Field(None, description="Payment per period (the monthly EMI, or the annual payment). Leave out if it is the unknown.")
+    payments_per_year: Literal[1, 2, 4, 12] = Field(12, description="Payments per year: 12 monthly (default), 4 quarterly, 2 half-yearly, 1 annual.")
+    years: float | None = Field(None, description="Loan term in years, instead of months (e.g. a five-year loan with annual payments).")
 
 
 @tool(args_schema=LoanArgs)
 def loan_emi(**kwargs) -> str:
-    """Loan with monthly payments (home, car, personal loan, mortgage). Give exactly three of principal, annual_rate_pct, months and emi; it solves the missing one: the EMI, the interest rate the payments imply (APR = monthly rate × 12, plus the effective annual rate), the number of months, or the amount that can be borrowed. Also returns total interest and a year-wise schedule. Leave the unknown out; never pass 0 for it."""
+    """Loan with level payments (home, car, personal loan, mortgage). Give exactly three of principal, annual_rate_pct, the term (months, or years) and emi (the payment per period); it solves the missing one: the payment, the interest rate the payments imply (APR = rate per period × payments_per_year, plus the effective annual rate), the term, or the amount that can be borrowed. Monthly by default; payments_per_year=1 for annual payments. Also returns total interest and the amortization schedule. Leave the unknown out; never pass 0 for it."""
     return _run(C.loan_emi, **kwargs)
 
 
@@ -314,7 +372,7 @@ SolveFinancialsArgs = create_model(
 
 @tool(args_schema=SolveFinancialsArgs)
 def solve_financials(targets: list[str], **items) -> str:
-    """Solve textbook corporate-finance problems from statement figures and ratios: income statement (EBIT, taxes, net income), liquidity, turnover and days' sales, leverage and DuPont, profit margin, ROA, ROE, payout, retention, sustainable or internal growth, EPS, P/E, market-to-book and EV multiples. Pass EVERY figure the question gives under its name, and the item(s) asked for in targets; the tool applies the standard formulas and returns each step. Never compute an input yourself. Percent items (*_pct) take the percent number (23 percent -> 23); ratios and turnovers are plain numbers (.84 -> 0.84). Example: "current liabilities $445,000, quick ratio .84, inventory turnover 6, current ratio 1.3; what is COGS?" -> current_liabilities=445000, quick_ratio=0.84, inventory_turnover=6, current_ratio=1.3, targets=["cogs"]."""
+    """Solve textbook corporate-finance problems from statement figures and ratios: income statement (EBIT, taxes, net income), liquidity, turnover and days' sales, leverage and DuPont, profit margin, ROA, ROE, payout, retention, sustainable or internal growth, EPS, P/E, market-to-book and EV multiples. Pass EVERY figure the question gives under its name, and the item(s) asked for in targets; the tool applies the standard formulas and returns each step. Never compute an input yourself; for statements covering several years, call it once per year. Percent items (*_pct) take the percent number (23 percent -> 23); ratios and turnovers are plain numbers (.84 -> 0.84). Example: "current liabilities $445,000, quick ratio .84, inventory turnover 6, current ratio 1.3; what is COGS?" -> current_liabilities=445000, quick_ratio=0.84, inventory_turnover=6, current_ratio=1.3, targets=["cogs"]."""
     return _run(F.solve_financials, targets=targets, **{k: v for k, v in items.items() if v is not None})
 
 
@@ -325,8 +383,8 @@ def income_tax(financial_year: str = "2026-27", regime: Literal["both", "new", "
                rent_paid_monthly: float = 0, city: str = "", age: int = 30, other_income: float = 0,
                section_80c: float = 0, health_insurance_self: float = 0, health_insurance_parents: float = 0,
                nps_80ccd1b: float = 0, home_loan_interest: float = 0, professional_tax: float = 0,
-               employer_nps: float = 0) -> str:
-    """Indian income tax for a resident salaried person, new vs old regime: slabs, standard deduction, 87A rebate with marginal relief, surcharge, 4% cess, HRA exemption and old-regime deductions. Pass only figures the user gave, as stated: yearly amounts in the plain fields, per-month amounts in the *_monthly fields (the tool multiplies by 12). Leave out anything not given; the tool lists what is missing for the old-regime HRA exemption.
+               employer_nps: float = 0, capital_gains_equity_stcg: float = 0, capital_gains_equity_ltcg: float = 0) -> str:
+    """Indian income tax for a resident salaried person, new vs old regime: slabs, standard deduction, 87A rebate with marginal relief, surcharge, 4% cess, HRA exemption and old-regime deductions. Pass only figures the user gave, as stated: yearly amounts in the plain fields, per-month amounts in the *_monthly fields (the tool multiplies by 12). Profit from selling shares or mutual funds is a capital gain: pass it as capital_gains_equity_stcg / capital_gains_equity_ltcg, never as other_income. Leave out anything not given; the tool lists what is missing for the old-regime HRA exemption.
 
     Args:
         financial_year: '2026-27' (current, default) or '2025-26' if the user names that year or AY 2026-27.
@@ -341,7 +399,7 @@ def income_tax(financial_year: str = "2026-27", regime: Literal["both", "new", "
         rent_paid_monthly: Rent actually paid per month.
         city: City of the rented home, e.g. 'Mumbai' (metro cities get 50% instead of 40%).
         age: Age in years, only if the user gave it (60+ and 80+ have higher old-regime exemptions).
-        other_income: Other taxable income per year (interest etc.), only if given.
+        other_income: Other income taxed at slab rates per year (interest, rent), only if given; never share or mutual-fund profit.
         section_80c: 80C investments (PF, PPF, ELSS, LIC...) per year, old regime only.
         health_insurance_self: 80D premium for self and family per year.
         health_insurance_parents: 80D premium for parents per year.
@@ -349,6 +407,8 @@ def income_tax(financial_year: str = "2026-27", regime: Literal["both", "new", "
         home_loan_interest: Interest on a self-occupied home loan per year (24(b)).
         professional_tax: Professional tax paid per year.
         employer_nps: Employer NPS contribution per year (80CCD(2)).
+        capital_gains_equity_stcg: Short-term profit from selling shares or equity funds; the tool explains it is taxed separately.
+        capital_gains_equity_ltcg: Long-term profit from selling shares or equity funds; the tool explains it is taxed separately.
     """
     return _run(T.income_tax, financial_year=financial_year, regime=regime, gross_salary=gross_salary,
                 gross_salary_monthly=gross_salary_monthly, hra_received=hra_received,
@@ -356,10 +416,11 @@ def income_tax(financial_year: str = "2026-27", regime: Literal["both", "new", "
                 rent_paid=rent_paid, rent_paid_monthly=rent_paid_monthly, city=city, age=age, other_income=other_income,
                 section_80c=section_80c, health_insurance_self=health_insurance_self,
                 health_insurance_parents=health_insurance_parents, nps_80ccd1b=nps_80ccd1b,
-                home_loan_interest=home_loan_interest, professional_tax=professional_tax, employer_nps=employer_nps)
+                home_loan_interest=home_loan_interest, professional_tax=professional_tax, employer_nps=employer_nps,
+                capital_gains_equity_stcg=capital_gains_equity_stcg, capital_gains_equity_ltcg=capital_gains_equity_ltcg)
 
 
-CALC_TOOLS = [loan_emi, sip_future_value, goal_saving, tvm, real_return, effective_annual_rate, npv_irr, equivalent_annual_cost,
-              bond_metrics, black_scholes, calculate, solve_equation, solve_financials, financial_ratios, balance_sheet_check,
+CALC_TOOLS = [loan_emi, sip_future_value, goal_saving, tvm, real_return, effective_annual_rate, npv_irr, perpetuity,
+              project_cash_flows, equivalent_annual_cost, bond_metrics, black_scholes, calculate, solve_equation, solve_financials, financial_ratios, balance_sheet_check,
               cash_flow_statement, income_tax]
 TOOLS_BY_NAME = {t.name: t for t in CALC_TOOLS}

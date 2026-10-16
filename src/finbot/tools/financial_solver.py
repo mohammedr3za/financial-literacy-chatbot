@@ -24,6 +24,7 @@ VARIABLES: dict[str, tuple[str, str, str]] = {
     "sales": ("money", "Sales", "Sales or revenue."),
     "costs": ("money", "Costs", "Costs: operating costs other than depreciation (the 'costs' line of an income statement)."),
     "cogs": ("money", "Cost of goods sold", "Cost of goods sold (COGS)."),
+    "other_expenses": ("money", "Other expenses", "Other operating expenses besides COGS and depreciation (SG&A)."),
     "gross_profit": ("money", "Gross profit", "Gross profit."),
     "depreciation": ("money", "Depreciation", "Depreciation (and amortization) expense."),
     "ebit": ("money", "EBIT", "EBIT, earnings before interest and taxes (operating income)."),
@@ -98,6 +99,7 @@ _ALIAS_GROUPS = {
     "sales": "revenue revenues net_sales total_sales sales_revenue total_revenue",
     "costs": "operating_costs operating_expenses total_costs",
     "cogs": "cost_of_goods_sold cost_of_sales",
+    "other_expenses": "other_operating_expenses sga selling_general_and_administrative selling_general_administrative",
     "depreciation": "depreciation_expense depreciation_and_amortization",
     "ebit": "operating_income earnings_before_interest_and_taxes operating_profit",
     "interest": "interest_expense interest_paid",
@@ -158,7 +160,7 @@ def resolve(name: str) -> str:
 
 KIND = {name: v[0] for name, v in VARIABLES.items()}
 LABEL = {name: v[1] for name, v in VARIABLES.items()}
-NONNEGATIVE = {"sales", "costs", "cogs", "depreciation", "interest", "tax_rate_pct", "dividends", "current_assets",
+NONNEGATIVE = {"sales", "costs", "cogs", "other_expenses", "depreciation", "interest", "tax_rate_pct", "dividends", "current_assets",
                "current_liabilities", "cash", "receivables", "inventory", "quick_assets", "net_fixed_assets", "total_assets",
                "long_term_debt", "total_debt", "current_ratio", "quick_ratio", "cash_ratio", "inventory_turnover",
                "days_sales_in_inventory", "receivables_turnover", "credit_sales", "credit_sales_pct", "days_sales_in_receivables",
@@ -174,6 +176,7 @@ _roa_b = s.roa_pct / 100 * s.retention_ratio_pct / 100
 # item first; the basic definitions come before the textbook shortcuts (DuPont and friends).
 IDENTITIES: list[tuple[str, sp.Expr, str]] = [
     ("ebit", s.sales - s.costs - s.depreciation, "sales − costs − depreciation"),
+    ("ebit", s.sales - s.cogs - s.other_expenses - s.depreciation, "sales − cogs − other_expenses − depreciation"),
     ("ebitda", s.ebit + s.depreciation, "ebit + depreciation"),
     ("ebt", s.ebit - s.interest, "ebit − interest"),
     ("taxes", s.ebt * s.tax_rate_pct / 100, "ebt × tax_rate_pct ÷ 100"),

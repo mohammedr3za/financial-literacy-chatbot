@@ -2,7 +2,7 @@
 import re
 from dataclasses import dataclass, field
 
-from .routing import REQUIRED_TOOLS, missing_tools
+from .routing import HINTS, REQUIRED_TOOLS, missing_tools
 from .tools.registry import TOOLS_BY_NAME
 
 FOOTER = ("\n\n---\n*This is general information, not investment advice. Verify with official sources "
@@ -10,7 +10,8 @@ FOOTER = ("\n\n---\n*This is general information, not investment advice. Verify 
 
 _NEG = r"(?:not|no|never|cannot|can't|can not|isn't|aren't|don't|doesn't|won't|nobody|none|without)"
 _GUARANTEE_PHRASES = re.compile(
-    r"(?i)\b(guaranteed?|assured)\s+(returns?|profits?|gains?|income|growth|\d+(?:\.\d+)?\s*%)"
+    r"(?i)\b(guaranteed?|assured)\s+(returns?|profits?|gains?|income|growth|"
+    r"\d+(?:\.\d+)?\s*%(?!\s*(?:saving|savings|interest saving|cost|reduction)))"   # paying off a 9% loan saves 9% for sure
     r"|\b(will|shall)\s+(definitely|surely|certainly)\s+(give|make|earn|return|grow|double)"
     r"|\b(risk[- ]free)\s+(returns?|profits?|investment)"
     r"|\b100%\s+(safe|sure|guaranteed)"
@@ -49,10 +50,12 @@ def _big_plain(num: str) -> bool:
     return len(digits) >= 4 or "." in num
 
 
-def unsupported_figures(answer: str, evidence: str, rel_tol: float = 0.0, plain_numbers: bool = False) -> list[str]:
+def unsupported_figures(answer: str, evidence: str, rel_tol: float = 0.0, plain_numbers: bool = False,
+                        scale_variants: bool = True) -> list[str]:
     allowed = _figures(evidence, claims_only=False)
 
-    allowed_ext = allowed | {round(a / 100, 6) for a in allowed} | {round(a * 100, 4) for a in allowed}  # 23 % <-> 0.23
+    allowed_ext = allowed | ({round(a / 100, 6) for a in allowed} | {round(a * 100, 4) for a in allowed}  # 23 % <-> 0.23
+                             if scale_variants else set())
 
     def close(c: float, a: float) -> bool:
         return abs(c - a) <= max(abs(a) * rel_tol, 0.005)
@@ -99,7 +102,7 @@ _CODE_NAMES = sorted(n for n in TOOLS_BY_NAME if "_" in n)
 _WORD_NAMES = sorted(n for n in TOOLS_BY_NAME if "_" not in n)
 _TOOL_NARRATION = re.compile(
     rf"\b({'|'.join(_CODE_NAMES)})\b"
-    rf"|\b({'|'.join(_WORD_NAMES)})\s*\(|`({'|'.join(_WORD_NAMES)})`|\b({'|'.join(_WORD_NAMES)})\s+(function|tool)\b"
+    rf"|\b({'|'.join(_WORD_NAMES)})\(|`({'|'.join(_WORD_NAMES)})`|\b({'|'.join(_WORD_NAMES)})\s+(function|tool)\b"
     r"|\b(function|tool)s?\s+(was|were|is|has been|have been)\s+(called|invoked|used|run|executed)\b"
     r"|\b(called|invoked|calling|invoking|ran)\s+the\s+[\w ]{0,25}?\b(function|tool)\b|\btool calls?\b", re.I)
 
@@ -421,6 +424,27 @@ def arithmetic_mismatches(answer: str) -> list[dict]:
     return found
 
 
+# check 12: a calculation that lacks inputs gets a request for them, not a made-up example
+_HYPOTHETICAL = re.compile(r"(?i)\b(hypothetical(ly)?|for illustration|illustrative|let'?s (say|assume)|suppose|"
+                           r"for example,? if|as an example|example calculation|made[- ]up example|assuming (that )?(the|a|an)\b)")
+_ASKS_INPUT = re.compile(r"(?i)\b(please (provide|share|give|tell)|could you (provide|share|give|tell)|i need (the|to know|more)|"
+                         r"need the|missing|not (given|provided|specified|stated)|without (the|knowing))\b")
+
+
+def has_hypothetical_example(text: str) -> bool:
+    m = _HYPOTHETICAL.search(text or "")
+    return bool(m and _ASKS_INPUT.search(text) and re.search(r"\d", text[m.start():]))
+
+
+def cut_hypothetical(text: str) -> str:
+    """Drop everything from the sentence that starts a made-up example."""
+    m = _HYPOTHETICAL.search(text or "")
+    if not m:
+        return text
+    start = max(text.rfind(". ", 0, m.start()) + 1, text.rfind("\n", 0, m.start()) + 1, 0)
+    return text[:start].strip()
+
+
 def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: int, source_urls: tuple = (), evidence: str | None = None) -> ReviewResult:
     codes, issues = [], []
     text = answer or ""
@@ -433,8 +457,9 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
     if missing:
         need = sorted({t for k in missing for t in REQUIRED_TOOLS[k]})
         codes.append("wrong_tool" if tools_used else "no_tool_for_numbers")
+        how = " ".join(f"How: {HINTS[k]}" for k in missing if k in HINTS)
         issues.append(f"This question must be answered with {' or '.join(need)}. Call it with the numbers from the question and use its exact "
-                      "result; do not compute anything yourself.")
+                      "result; do not compute anything yourself." + (f" {how}" if how else ""))
     elif flags.get("calculation_intent") and not tools_used:
         codes.append("no_tool_for_numbers")
         issues.append("The question needs a calculation but no calculator tool was called. Call the right tool and use its exact result.")
@@ -479,6 +504,10 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
         codes.append("arithmetic_mismatch")
         issues.append(f"The working shown does not match the result: {'; '.join(parts)}. Recompute with the right tool "
                       "(for statement items, solve_financials) and make every step you show agree with the result you state.")
+    if flags.get("calculation_intent") and has_hypothetical_example(text):
+        codes.append("hypothetical_example")
+        issues.append("Required inputs are missing, and the answer adds a made-up example. Ask for the missing inputs and "
+                      "stop: do not compute an example or a hypothetical case.")
     allowed = ALLOWED_DOMAINS + tuple(_DOMAIN.findall(" ".join(source_urls)))
     unknown = sorted({d.lower() for d in _DOMAIN.findall(text)
                       if not any(d.lower() == a or d.lower().endswith("." + a) for a in allowed)})

@@ -12,7 +12,7 @@ from langgraph.graph.message import add_messages
 from .config import Settings, get_settings
 from .precheck import precheck as run_precheck
 from .prompts import SYSTEM_PROMPT, context_block
-from .review import FOOTER, review_answer, reviewer_note
+from .review import FOOTER, _strip_math_markup, cut_hypothetical, review_answer, reviewer_note, unsupported_figures
 from .tables import to_markdown
 from .tools.financial_solver import KIND as SOLVER_KIND
 from .tools.financial_solver import resolve as solver_name
@@ -20,7 +20,12 @@ from .tools.fmt import MONEY_STYLE
 from .tools.registry import CALC_TOOLS, TOOLS_BY_NAME
 
 _THINK = re.compile(r"<think>.*?</think>", re.S)
-GROUNDED_TOOLS = {"financial_ratios", "balance_sheet_check", "cash_flow_statement", "solve_financials", "equivalent_annual_cost", "income_tax"}
+GROUNDED_TOOLS = {"financial_ratios", "balance_sheet_check", "cash_flow_statement", "solve_financials", "equivalent_annual_cost",
+                  "income_tax", "project_cash_flows"}
+_WORD_NUMBERS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen "
+                                            "fourteen fifteen sixteen seventeen eighteen nineteen twenty".split())}
+_WORD_NUMBERS.update({"thirty": 30, "forty": 40, "fifty": 50})
+_WORD_NUMBER = re.compile(r"(?i)\b(" + "|".join(_WORD_NUMBERS) + r")\b")
 _NUMBER = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|(?<![\w.,])\d+(?:\.\d+)?|(?<![\w.])\.\d+")   # ".84" too
 _SCALED = re.compile(r"(?i)(?<![\w.])(\d+(?:\.\d+)?|\.\d+)\s*(thousand|million|mn|billion|bn)\b")
 _SCALE = {"thousand": 1e3, "million": 1e6, "mn": 1e6, "billion": 1e9, "bn": 1e9}
@@ -71,6 +76,11 @@ def ungrounded_values(args: dict, user_text: str, tool: str | None = None, tool_
     if tool == "equivalent_annual_cost":
         allowed = allowed | numbers_in(tool_text)
         return [f"{p}={v:g}" for p, v in _arg_numbers(args) if v != 0 and round(abs(v), 4) not in allowed]
+    if tool == "project_cash_flows":   # number words ("three-year") count; so does a unit change by 100 (".50 cents" = 0.005)
+        allowed = allowed | numbers_in(tool_text) | {float(_WORD_NUMBERS[w.lower()]) for w in _WORD_NUMBER.findall(user_text or "")}
+        allowed = allowed | {round(a / 100, 6) for a in allowed} | {round(a * 100, 4) for a in allowed}
+        return [f"{p}={v:g}" for p, v in _arg_numbers(args) if v != 0 and round(abs(v), 6) not in allowed
+                and round(abs(v), 4) not in allowed]
     diffs = {round(abs(a - b), 4) for a in allowed for b in allowed}
     percents = {round(float(n), 4) for n, _ in _PERCENT.findall(user_text or "")}
     percent_only = percents - numbers_in(_PERCENT.sub(" ", user_text or ""))
@@ -98,6 +108,69 @@ _ZERO_RATE_STATED = re.compile(r"(?i)(?<![\d.])0(\.0+)?\s*(%|per ?cent)|\bzero\b
 
 _NO_RUNNING_COST = re.compile(r"(?i)\bno (annual |yearly |operating |running |maintenance )*costs?\b|\bzero\b|"
                               r"\bcosts? nothing to (run|operate)\b")
+
+
+_BEGIN_CUE = re.compile(r"(?i)\b(beginning|start)\s+of\s+(each|every|the)\b|\bannuity due\b|\bin advance\b|"
+                        r"\bat the (beginning|start)\b")
+_TIMED_TOOLS = ("sip_future_value", "goal_saving")
+
+
+def deposit_timing(tool: str, args: dict, flags: dict, user_text: str) -> dict:
+    """Deposit timing convention (SPEC 3.1): a "beginning"/"start of" cue means the start of each period; otherwise a
+    US-dollar (textbook) question means the end of each period (ordinary annuity), whatever the model passed; otherwise
+    an omitted timing means the start of each month (an Indian SIP)."""
+    if tool not in _TIMED_TOOLS or not isinstance(args, dict):
+        return args
+    if _BEGIN_CUE.search(user_text or ""):
+        timing = "start"
+    elif flags.get("currency") == "USD":
+        timing = "end"
+    else:
+        timing = args.get("timing") or "start"
+    return {**args, "timing": timing}
+
+
+_AMT = r"(\d[\d,]*(?:\.\d+)?)"
+_SOUP = [  # LaTeX-dollar soup around an amount -> a plain amount (SPEC 3.1 currency clean-up)
+    (re.compile(r"\$\s*([-−])\s*\\?\$\s*" + _AMT + r"\s*\$(?!\$)"), r"\1$\2"),          # $-$1,650,000$  $-\$1,650,000$
+    (re.compile(r"\$\$\s*" + _AMT + r"\s*\$(?!\$)"), r"$\1"),                              # $$412,500.00$
+    (re.compile(r"(?<![$\\])\$\s*\\\$\s*" + _AMT + r"\s*\$(?!\$)"), r"$\1"),                # $\$412,500.00$
+]
+_SOUP_USD = (re.compile(r"(?<![$\\\w])\$" + _AMT + r"\$(?![$\d])"), r"$\1")               # $1,452,666.67$
+
+
+def clean_currency(text: str, currency: str = "INR") -> str:
+    for pattern, repl in _SOUP:
+        text = pattern.sub(repl, text)
+    if currency == "USD":
+        text = _SOUP_USD[0].sub(_SOUP_USD[1], text)
+    return text
+
+
+_CAPITAL_GAIN = re.compile(r"(?i)\b(capital gains?|stcg|ltcg)\b|\b(profit|gains?|sold|sell|selling|sale)\b.{0,40}\b(shares?|"
+                           r"stocks?|equity|equities|mutual funds?)\b|\b(shares?|stocks?|equity|mutual funds?)\b.{0,40}\b(profit|"
+                           r"gains?|sold|sale)\b")
+_OTHER_INCOME_CUE = re.compile(r"(?i)\b(interest|rent(al)?|fd|fixed deposit|savings account|other income|freelanc\w*|"
+                               r"business|dividends?|pension)\b")
+
+
+_CENTS = re.compile(r"(?i)(?<![\w.])(\d*\.?\d+)\s*cents?\b")
+
+
+def cents_as_dollars(tool: str, args: dict, user_text: str) -> list[float]:
+    """project_cash_flows: a cost the question writes in cents (".40 cents") passed as dollars (0.4 instead of 0.004)."""
+    if tool != "project_cash_flows" or not isinstance(args, dict):
+        return []
+    cents = {round(float(x), 6) for x in _CENTS.findall(user_text or "")}
+    v = args.get("variable_cost_per_unit")
+    vals = v if isinstance(v, list) else [v]
+    return [x for x in vals if isinstance(x, (int, float)) and round(float(x), 6) in cents]
+
+
+def stock_profit_as_other_income(args: dict, user_text: str) -> bool:
+    """income_tax with other_income when the question talks about profit from shares or funds and names no other income."""
+    return bool(isinstance(args, dict) and args.get("other_income") and _CAPITAL_GAIN.search(user_text or "")
+                and not _OTHER_INCOME_CUE.search(user_text or ""))
 
 
 def invented_zero_rates(tool: str, args: dict, user_text: str) -> list[str]:
@@ -131,9 +204,173 @@ def _argument_error(name: str, exc: Exception) -> str:
 _SOLVER_ADVICE = (" For solve_financials, pass each figure exactly as the question states it under its name; percent items (*_pct) "
                   "take the percent number (23 percent -> 23) and ratios are plain numbers (.84 -> 0.84). Never compute an input "
                   "yourself: put the item you need in targets.")
+_BALANCE_ADVICE = (" For a balance sheet, pass every listed item to balance_sheet_check (it adds up the sections); if the "
+                   "question asks for total equity (or total liabilities), pass that section as {}: the tool derives it as "
+                   "the balancing figure.")
 _EAC_ADVICE = ("For electricity, pass power_watts, hours_per_year, price_per_kwh and lifetime_hours exactly as the question gives "
                "them and leave out annual_cost and life_years; the tool works them out. Compute any other figure the question does "
                "not state with calculate first and pass its exact result. Costs are positive numbers.")
+
+
+NOT_RELIABLE = ("I could not compute this reliably, so I am not giving a figure. Please check that the question gives every "
+                "input (amounts, rate, term) and ask again; I will work it out with the calculator.")
+_NOT_RELIABLE_LOCAL = [   # the same message, first in the user's script (SPEC 5: reply in the user's language)
+    (re.compile(r"[\u0900-\u097F]"), "मैं इसकी गणना भरोसेमंद ढंग से नहीं कर सका, इसलिए कोई आंकड़ा नहीं दे रहा हूँ। कृपया जाँचें कि प्रश्न "
+                                    "में सभी जानकारी (राशि, ब्याज दर, अवधि) दी गई है और फिर से पूछें।"),
+    (re.compile(r"[\u0B80-\u0BFF]"), "இதை நம்பகமாகக் கணக்கிட முடியவில்லை, எனவே எந்த எண்ணையும் தரவில்லை. கேள்வியில் தொகை, வட்டி "
+                                    "விகிதம், காலம் ஆகிய அனைத்தும் உள்ளதா எனச் சரிபார்த்து மீண்டும் கேளுங்கள்."),
+]
+
+
+def not_reliable(question: str) -> str:
+    local = next((text for script, text in _NOT_RELIABLE_LOCAL if script.search(question or "")), None)
+    return f"{local}\n\n{NOT_RELIABLE}" if local else NOT_RELIABLE
+
+
+def fabricated_figures(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict) -> bool:
+    """A calculation answer whose figures are not in the question (no successful tool call) or not in the evidence
+    (question, sources, tool results). Such an answer is replaced by the number-free fallback (SPEC 3.1)."""
+    if not (flags.get("calculation_intent") or flags.get("calc_types")):
+        return False
+    text = _strip_math_markup(answer)
+    if not tools_used:   # with no calculator, only figures restated exactly from the question may appear ($950 is not 9.50%)
+        return bool(unsupported_figures(text, question, plain_numbers=True, scale_variants=False))
+    return bool(unsupported_figures(text, evidence, rel_tol=0.005, plain_numbers=True))
+
+
+# ---------------------------------------------------------------- final clean-ups before an answer ships
+_TOOL_ALT = "|".join(re.escape(n) for n in sorted(TOOLS_BY_NAME, key=len, reverse=True))
+_SNAKE_ALT = "|".join(re.escape(n) for n in sorted(TOOLS_BY_NAME, key=len, reverse=True) if "_" in n)
+_CALL_SHOWN = re.compile(rf"`?\b({_SNAKE_ALT})`?\s*\(|`?\b({_TOOL_ALT})`?\(")   # "perpetuity (…)" in prose is not a call
+_NARRATED = re.compile(r"\b(function|tool)s?\s+(was|were|is|has been|have been)\s+(called|invoked|used|run|executed)\b"
+                       r"|\b(called|invoked|calling|invoking|ran)\s+the\s+[\w ]{0,25}?\b(function|tool)\b|\btool calls?\b", re.I)
+_TOOL_NAMED = re.compile(rf"(?:\b(?:the|a|an)\s+)?(?:`({_TOOL_ALT})`|\b({_SNAKE_ALT})\b)(?:\s+(?:tool|function|calculator))?"
+                         rf"|(?:\b(?:the|a|an)\s+)?\b({_TOOL_ALT})\s+(?:tool|function)\b", re.I)
+
+
+def strip_tool_narration(text: str) -> str:
+    """Deterministic last step (SPEC 3.1): sentences that show a tool call or narrate one are removed, and any other
+    mention of a registry tool name becomes "the calculator"."""
+    out_lines = []
+    for line in (text or "").split("\n"):
+        kept = [sent for sent in re.split(r"(?<=[.!?])\s+", line) if not (_CALL_SHOWN.search(sent) or _NARRATED.search(sent))]
+        line = " ".join(kept) if kept or not line.strip() else ""
+        line = _TOOL_NAMED.sub(lambda m: "The calculator" if m.group(0)[:1].isupper() else "the calculator", line)
+        out_lines.append(line)
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(out_lines)).strip()
+    return cleaned or (text or "")
+
+
+SHORT_TABLE_ROWS = 12
+_OVERFLOW = re.compile(r"(?i)maximum context length|context[_ ]length|prompt is too long|too many tokens|reduce the length")
+TOO_LONG = ("This conversation is too long for me to answer reliably. Please start a new conversation, or ask one part of "
+            "the question at a time.")
+
+
+def compact_tool_result(content, drop_tables: bool = False) -> str:
+    """What the model sees of a tool result (SPEC 3.1 context budget): values, steps and short tables; a long table (or,
+    with drop_tables, every table) becomes a note. The full result stays in the state, the trace and the UI."""
+    try:
+        out = json.loads(content)
+    except (TypeError, ValueError):
+        return content
+    if not isinstance(out, dict) or "error" in out:
+        return content
+    out = {k: v for k, v in out.items() if k != "table_shown_to_user"}
+    table = out.get("table")
+    if isinstance(table, dict):
+        rows = table.get("rows") or []
+        if drop_tables or len(rows) > SHORT_TABLE_ROWS:
+            out["table"] = f"table shown to user ({len(rows)} rows)"
+        else:
+            out["table"] = {"columns": table.get("columns"), "rows": rows, "note": "shown to user below the answer; do not copy it"}
+    if drop_tables:
+        out.pop("inputs", None)
+    return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
+
+
+def _for_model(msgs: list, drop_tables: bool = False) -> list:
+    return [ToolMessage(content=compact_tool_result(m.content, drop_tables), tool_call_id=m.tool_call_id, name=m.name, id=m.id)
+            if isinstance(m, ToolMessage) else m for m in msgs]
+
+
+# ---------------------------------------------------------------- multi-turn history budget (SPEC 3.1 agent)
+HISTORY_TURNS = 2
+MAX_PROMPT_TOKENS = 10_000          # history plus the current turn, when the context allows it
+_PUNCT = re.compile(r"[^\w\s]")
+
+
+def estimate_tokens(x) -> int:
+    """Rough Qwen token count without a tokenizer: digits and punctuation are dense, words about 4.2 characters a token
+    (within about 15% of the real tokenizer on prompts, schemas and tool results)."""
+    if isinstance(x, (list, tuple)):
+        return sum(estimate_tokens(m) for m in x)
+    if not isinstance(x, str):
+        text = text_of(x) if hasattr(x, "content") else str(x)
+        calls = getattr(x, "tool_calls", None)
+        return estimate_tokens(text + (json.dumps(calls, ensure_ascii=False) if calls else "")) + 4
+    digits = sum(ch.isdigit() for ch in x)
+    punct = len(_PUNCT.findall(x))
+    return int(digits + punct * 0.5 + (len(x) - digits - punct) / 4.2) + 1
+
+
+_TOOL_TOKENS: dict = {}
+
+
+def prompt_budget(settings: Settings) -> int:
+    """Tokens left for history plus the current turn: the context minus the output cap, the system prompt, the tool
+    schemas and a margin, capped at MAX_PROMPT_TOKENS."""
+    if "n" not in _TOOL_TOKENS:
+        from .tools.schemas import compact_tool_schemas
+        _TOOL_TOKENS["n"] = estimate_tokens("\n".join(json.dumps(t, ensure_ascii=False) for t in compact_tool_schemas(CALC_TOOLS)))
+    room = settings.num_ctx - settings.output_cap() - estimate_tokens(SYSTEM_PROMPT) - _TOOL_TOKENS["n"] - 384
+    return max(2000, min(MAX_PROMPT_TOKENS, int(room * 0.92)))
+
+
+def earlier_turns(msgs: list) -> list[dict]:
+    """Earlier turns as {question, calls, results, answer}; reviewer notes, tool payloads and failed calls are left out."""
+    failed = {m.tool_call_id for m in msgs if isinstance(m, ToolMessage) and _is_error(m.content)}
+    results = {m.tool_call_id: str(m.content) for m in msgs if isinstance(m, ToolMessage) and not _is_error(m.content)}
+    turns, cur = [], None
+    for m in msgs:
+        if isinstance(m, HumanMessage) and m.name != "reviewer":
+            cur = {"question": text_of(m), "calls": [], "results": [], "answer": ""}
+            turns.append(cur)
+        elif cur is not None and isinstance(m, AIMessage):
+            ok = [tc for tc in (m.tool_calls or []) if tc["id"] not in failed]
+            cur["calls"] += ok
+            cur["results"] += [results[tc["id"]] for tc in ok if tc["id"] in results]
+            if not m.tool_calls:
+                cur["answer"] = text_of(m).replace(FOOTER.strip(), "").strip()
+    return turns
+
+
+def inputs_line(calls: list) -> str:
+    """One line with the tool inputs of a turn, e.g. loan_emi(principal=2000000, annual_rate_pct=8.5, months=240)."""
+    parts = []
+    for tc in calls:
+        args = ", ".join(f"{k}={json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict, str)) else v}"
+                         for k, v in tc["args"].items() if v is not None)
+        parts.append(f"{tc['name']}({args})")
+    line = "; ".join(parts)
+    return line if len(line) <= 600 else line[:597] + "..."
+
+
+def history_messages(turns: list[dict], answer_chars: int | None = None) -> list:
+    out = []
+    for t in turns:
+        q = t["question"]
+        if t["calls"]:
+            q += f"\n[Calculator inputs used for this question: {inputs_line(t['calls'])}]"
+        a = t["answer"] or "(no answer)"
+        if answer_chars is not None and len(a) > answer_chars:
+            a = a[:answer_chars].rsplit(" ", 1)[0] + " …"
+        out += [HumanMessage(content=q), AIMessage(content=a)]
+    return out
+
+
+def is_context_overflow(exc: Exception) -> bool:
+    return bool(_OVERFLOW.search(str(exc)))
 
 
 def _is_error(content) -> bool:
@@ -183,10 +420,12 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         model_with_tools = model.bind_tools(CALC_TOOLS)
     if kb == "auto":
         kb = _load_kb(s)
+    budget = prompt_budget(s)
 
     def precheck(state: State) -> dict:
         prev = [m for m in state.get("messages", []) if isinstance(m, HumanMessage) and m.name != "reviewer"]
-        r = run_precheck(state.get("user_input", ""), text_of(prev[-1]) if prev else None)
+        # a follow-up of a follow-up ("And for 15 years?") is routed with the last two questions, not only the last one
+        r = run_precheck(state.get("user_input", ""), " ".join(text_of(m) for m in prev[-2:]) if prev else None)
         return {"messages": [HumanMessage(content=r.text)], "question_idx": len(state.get("messages", [])),
                 "flags": r.flags, "redactions": r.redactions, "amounts": r.amounts, "user_input": "",
                 "sources": [], "sources_relevant": False, "best_dense": 0.0, "rag_status": "",
@@ -209,13 +448,47 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
 
     def agent(state: State) -> dict:
         msgs, qi = state["messages"], state["question_idx"]
-        ctx = context_block(text_of(msgs[qi]), state["flags"], state.get("redactions", []),
-                            state.get("sources", []), state.get("rag_status", ""))
-        model_input = [SystemMessage(SYSTEM_PROMPT), *msgs[:qi], HumanMessage(ctx), *msgs[qi + 1:]]
+
+        turns = earlier_turns(msgs[:qi])
+
+        def ctx_for(sources) -> HumanMessage:
+            return HumanMessage(context_block(text_of(msgs[qi]), state["flags"], state.get("redactions", []), sources,
+                                              state.get("rag_status", "")))
+
+        def model_input(trim: bool) -> list:
+            """System prompt + at most the last 2 earlier turns as plain Q/A text + the current turn, within the budget.
+            trim (after a context-length error): only the last turn, shortened; sources shortened; every table removed."""
+            full = state.get("sources", [])
+            short = [{**x, "text": x["text"][:400]} for x in full]
+            levels = ([(1, 300, True, short)] if trim else
+                      [(HISTORY_TURNS, None, False, full), (1, None, False, full), (1, 1500, False, full),
+                       (1, 600, True, full), (1, 300, True, short), (0, None, True, short)])
+            for k, chars, drop, sources in levels:
+                candidate = [*history_messages(turns[-k:] if k else [], chars), ctx_for(sources),
+                             *_for_model(msgs[qi + 1:], drop_tables=drop)]
+                if estimate_tokens(candidate) <= budget:
+                    break
+            return [SystemMessage(SYSTEM_PROMPT), *candidate]
+
         capped = state.get("tool_iterations", 0) >= s.max_tool_iterations
-        response = (model if capped else model_with_tools).invoke(model_input)
+        runner = model if capped else model_with_tools
+        try:
+            response = runner.invoke(model_input(trim=False))
+        except Exception as exc:  # noqa: BLE001 - only a context-length error is retried
+            if not is_context_overflow(exc):
+                raise
+            try:
+                response = runner.invoke(model_input(trim=True))
+            except Exception as exc2:  # noqa: BLE001
+                if not is_context_overflow(exc2):
+                    raise
+                response = AIMessage(content=TOO_LONG)
         if capped and getattr(response, "tool_calls", None):  # defensive: never loop past the cap
             response = AIMessage(content=text_of(response) or "I could not finish the calculation.", id=response.id)
+        if not getattr(response, "tool_calls", None) and isinstance(response.content, str):
+            cleaned = clean_currency(response.content, state["flags"].get("currency", "INR"))
+            if cleaned != response.content:
+                response = response.model_copy(update={"content": cleaned})
         meta = getattr(response, "response_metadata", None) or {}
         return {"messages": [response], "served_by": meta.get("model_name") or meta.get("model") or "",
                 "tool_iterations": state.get("tool_iterations", 0) + (1 if getattr(response, "tool_calls", None) else 0)}
@@ -224,22 +497,45 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         """Run tool calls. Statement tools must only use figures from the user's message (SPEC 3.1)."""
         qi = state["question_idx"]
         user_text = text_of(state["messages"][qi])
+        prev = earlier_turns(state["messages"][:qi])[-1:]   # a follow-up may reuse the previous turn's figures
+        if prev:
+            user_text += f"\n{prev[0]['question']}\n{inputs_line(prev[0]['calls'])}"
         # results of this turn's earlier successful tool calls (an EAC input may be a calculate result)
         results = [str(m.content) for m in state["messages"][qi + 1:] if isinstance(m, ToolMessage) and not _is_error(m.content)]
         out = []
         style = MONEY_STYLE.set(state.get("flags", {}).get("currency", "INR"))   # $ questions get $ formatting
         for tc in state["messages"][-1].tool_calls:
+            tc = {**tc, "args": deposit_timing(tc["name"], tc["args"], state.get("flags", {}), user_text)}
             bad = (ungrounded_values(tc["args"], user_text, tc["name"], "\n".join(results))
                    if tc["name"] in GROUNDED_TOOLS else [])
             zero_rates = invented_zero_rates(tc["name"], tc["args"], user_text)
-            if bad and tc["name"] == "equivalent_annual_cost":
+            capital_gain = tc["name"] == "income_tax" and stock_profit_as_other_income(tc["args"], user_text)
+            in_cents = cents_as_dollars(tc["name"], tc["args"], user_text)
+            if in_cents:
+                content = json.dumps({"error": f"The question gives this cost in cents ({in_cents[0]:g} cents), but "
+                                      f"variable_cost_per_unit is in dollars. Pass variable_cost_cents_per_unit={in_cents[0]:g} "
+                                      "instead and leave variable_cost_per_unit out; the tool converts cents to dollars."},
+                                     ensure_ascii=False)
+            elif capital_gain:
+                content = json.dumps({"error": "other_income must not hold profit from selling shares or mutual funds: that is "
+                                      "a capital gain, taxed at special rates outside the slabs and the 87A rebate. Pass it as "
+                                      "capital_gains_equity_stcg or capital_gains_equity_ltcg instead (the tool says how it is "
+                                      "taxed), or call again with the salary figures only and say that the gain is taxed "
+                                      "separately."}, ensure_ascii=False)
+            elif bad and tc["name"] == "project_cash_flows":
+                content = json.dumps({"error": f"These values are not in the question or in an earlier tool result: {', '.join(bad)}. "
+                                      "Pass the figures exactly as the question gives them (sales, costs, investment, salvage, "
+                                      "NWC, rates, MACRS rates); the tool works out depreciation, taxes, OCF, NWC recovery and "
+                                      "after-tax salvage itself. Leave out sunk costs."}, ensure_ascii=False)
+            elif bad and tc["name"] == "equivalent_annual_cost":
                 content = json.dumps({"error": f"These values are not in the question or in an earlier tool result: {', '.join(bad)}. "
                                       + _EAC_ADVICE}, ensure_ascii=False)
             elif bad:
                 content = json.dumps({"error": f"These values are not in the user's data: {', '.join(bad)}. Pass only figures "
                                       "that appear in the data, exactly as given. Leave out items that are not given, and give "
                                       "opening and closing balances instead of computing changes yourself."
-                                      + (_SOLVER_ADVICE if tc["name"] == "solve_financials" else "")}, ensure_ascii=False)
+                                      + (_SOLVER_ADVICE if tc["name"] == "solve_financials" else "") + _BALANCE_ADVICE},
+                                     ensure_ascii=False)
             elif zero_rates == ["annual_cost"]:
                 content = json.dumps({"error": "annual_cost=0 is not in the question. Give the yearly running cost, or for "
                                       "electricity pass power_watts, hours_per_year, price_per_kwh and lifetime_hours exactly as "
@@ -272,19 +568,30 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         last_ai = next(m for m in reversed(msgs) if isinstance(m, AIMessage))
         answer = text_of(last_ai)
         srcs = state.get("sources", [])
+        prev = earlier_turns(msgs[:qi])[-1:]     # a follow-up may quote the previous turn's question and tool results
         evidence = "\n".join([text_of(msgs[qi])] + [x["text"] for x in srcs]
-                             + [m.content for m in turn if isinstance(m, ToolMessage)])
+                             + [m.content for m in turn if isinstance(m, ToolMessage)]
+                             + [p["question"] + "\n" + "\n".join(p["results"]) for p in prev])
         result = review_answer(answer, state["flags"], tools_used, len(srcs), tuple(x.get("url", "") for x in srcs), evidence)
         prior = state.get("review", {}).get("first_draft_codes", [])
         if result.passed:
-            return {"review": {"passed": True, "codes": [], "first_draft_codes": prior, "footer": False}}
+            out = {"review": {"passed": True, "codes": [], "first_draft_codes": prior, "footer": False}}
+            cleaned = strip_tool_narration(answer)
+            if cleaned != answer:
+                out["messages"] = [AIMessage(content=cleaned, id=last_ai.id)]
+            return out
         if state.get("revisions", 0) < s.max_revisions:
             return {"messages": [HumanMessage(content=reviewer_note(result), name="reviewer")],
                     "revisions": state.get("revisions", 0) + 1,
                     "review": {"passed": False, "codes": result.codes, "first_draft_codes": result.codes}}
-        if not answer.strip():   # the model gave up after the reviewer note: say so instead of showing only the footer
+        if "hypothetical_example" in result.codes:
+            answer = cut_hypothetical(answer)
+        if fabricated_figures(answer, text_of(msgs[qi]), evidence, tools_used, state["flags"]):
+            answer = not_reliable(text_of(msgs[qi]))
+        elif not answer.strip():   # the model gave up after the reviewer note: say so instead of showing only the footer
             answer = ("I could not complete this answer reliably. Please rephrase the question, or give the figures "
                       "(for example the cash flows year by year) and I will calculate it.")
+        answer = strip_tool_narration(answer)
         return {"messages": [AIMessage(content=answer + FOOTER, id=last_ai.id)],
                 "review": {"passed": False, "codes": result.codes, "first_draft_codes": prior, "footer": True}}
 
@@ -381,6 +688,7 @@ class FinBot:
 
     def __init__(self, model=None, kb: Any = "auto", settings: Settings | None = None):
         self.settings = settings or get_settings()
+        self.prompt_budget = prompt_budget(self.settings)
         self.graph = build_graph(model=model, kb=kb, settings=self.settings)
 
     def ask_iter(self, text: str, thread_id: str = "default", use_rag: bool = True):

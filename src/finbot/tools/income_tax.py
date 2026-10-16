@@ -25,6 +25,8 @@ CESS_PCT = 4
 METROS = {"2025-26": {"mumbai", "bombay", "kolkata", "calcutta", "delhi", "new delhi", "chennai", "madras"},
           "2026-27": {"mumbai", "bombay", "kolkata", "calcutta", "delhi", "new delhi", "chennai", "madras",
                       "hyderabad", "pune", "ahmedabad", "bengaluru", "bangalore"}}
+HRA_50PCT_CITIES = {"2025-26": ["Delhi", "Mumbai", "Kolkata", "Chennai"],
+                    "2026-27": ["Delhi", "Mumbai", "Kolkata", "Chennai", "Bengaluru", "Hyderabad", "Pune", "Ahmedabad"]}
 LIMITS = {"80c": 150_000, "80ccd1b": 50_000, "24b": 200_000, "professional_tax": 2_500}
 SOURCES = ["https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-1",
            "https://www.incometax.gov.in/iec/foportal/help/new-tax-vs-old-tax-regime-faqs",
@@ -101,8 +103,16 @@ def income_tax(gross_salary: float, financial_year: str = "2026-27", regime: str
                health_insurance_parents: float = 0, parents_senior: bool = False, nps_80ccd1b: float = 0,
                home_loan_interest: float = 0, professional_tax: float = 0, employer_nps: float = 0,
                employer_type: str = "private", gross_salary_monthly: float = 0, hra_received_monthly: float = 0,
-               rent_paid_monthly: float = 0, basic_da_monthly: float = 0) -> dict:
-    """Annual income tax for a resident salaried individual. Amounts are yearly rupees; *_monthly inputs are × 12."""
+               rent_paid_monthly: float = 0, basic_da_monthly: float = 0, capital_gains_equity_stcg: float = 0,
+               capital_gains_equity_ltcg: float = 0) -> dict:
+    """Annual income tax for a resident salaried individual. Amounts are yearly rupees; *_monthly inputs are × 12.
+    Equity capital gains are rejected with an explanation: they are never folded into other_income."""
+    if capital_gains_equity_stcg or capital_gains_equity_ltcg:
+        raise ValueError(
+            "Equity capital gains (profit from selling shares or equity mutual funds) are taxed at special rates under their "
+            "own sections, outside the slab rates and outside the 87A rebate, so this tool does not compute them and they must "
+            "never be passed as other_income. Call income_tax again with the salary figures only, report that tax, and say "
+            "that the capital gain is taxed separately at special rates (see incometax.gov.in).")
     gross_salary = gross_salary or 12 * gross_salary_monthly
     hra_received = hra_received or 12 * hra_received_monthly
     rent_paid = rent_paid or 12 * rent_paid_monthly
@@ -169,7 +179,7 @@ def income_tax(gross_salary: float, financial_year: str = "2026-27", regime: str
                                               professional_tax=professional_tax, employer_nps=employer_nps).items() if v},
            "formula": ("Taxable income = salary + other income − standard deduction − allowed deductions; tax = slab tax − "
                        "rebate (with marginal relief) + surcharge (with marginal relief); total = tax × 1.04 (4% cess)"),
-           "result": {"by_regime": results, "lower_tax_regime": best, "law": law,
+           "result": {"by_regime": results, "lower_tax_regime": best, "law": law, "hra_50pct_cities": HRA_50PCT_CITIES[fy],
                       "saving_with_lower_regime": round(abs(results["new"]["total_tax"] - results["old"]["total_tax"]), 2)
                       if len(results) == 2 else None,
                       "missing_inputs": missing, "notes": notes,

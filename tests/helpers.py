@@ -26,6 +26,8 @@ class ScriptedModel(BaseChatModel):
         if not self.responses:
             raise AssertionError("ScriptedModel ran out of responses (graph looped too long)")
         msg = self.responses.pop(0)
+        if isinstance(msg, Exception):     # e.g. a server error such as a context-length 400
+            raise msg
         if isinstance(msg, str):
             msg = AIMessage(content=msg)
         return ChatResult(generations=[ChatGeneration(message=msg)])

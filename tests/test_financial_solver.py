@@ -357,3 +357,20 @@ def test_live_alias_calls_now_solve():
     dsr = json.loads(tool.invoke({"net_income": 190000, "profit_margin_pct": 9.1, "accounts_receivable": 129370,
                                   "credit_sales_pct": 85, "targets": ["sales", "days_sales_in_receivables"], "tax_rate_pct": 0}))
     assert round(dsr["result"]["days_sales_in_receivables"], 2) == 26.61
+
+
+# ---------- other_expenses: EBIT = sales − cogs − other expenses − depreciation; one call per year (SPEC 4.1, 2026-10-17)
+@pytest.mark.parametrize("year,figures,ebit,ni", [
+    (2025, dict(sales=25000, cogs=9000, other_expenses=2500, depreciation=1500, interest=1000), 12000, 8690),   # (12000-1000)×0.79
+    (2026, dict(sales=23000, cogs=8800, other_expenses=2200, depreciation=1600, interest=1100), 10400, 7347),   # (10400-1100)×0.79
+])
+def test_income_statement_with_cogs_and_other_expenses(year, figures, ebit, ni):
+    out = solve_financials(targets=["ebit", "net_income"], tax_rate_pct=21, **figures)
+    assert out["result"]["ebit"] == ebit and round(out["result"]["net_income"], 2) == ni
+    assert any(st["formula"] == "ebit = sales − cogs − other_expenses − depreciation" for st in out["steps"])
+
+
+def test_other_expenses_aliases_and_costs_path_unchanged():
+    out = solve_financials(targets=["ebit"], sales=1000, cost_of_goods_sold=400, sga=100, depreciation=50)
+    assert out["result"]["ebit"] == 450
+    assert solve_financials(targets=["ebit"], sales=1000, costs=500, depreciation=50)["result"]["ebit"] == 450

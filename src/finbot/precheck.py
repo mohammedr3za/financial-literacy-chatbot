@@ -3,6 +3,7 @@
 Runs before anything reaches the model (SPEC 3.1).
 """
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from .routing import detect as detect_calc_types
@@ -51,6 +52,15 @@ def redact(text: str) -> tuple[str, list[str]]:
 # ---- Indian amounts --------------------------------------------------------------
 _UNITS = {"lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "lacs": 1e5, "crore": 1e7, "crores": 1e7, "cr": 1e7, "k": 1e3}
 _WORD_AMOUNT = re.compile(r"(?i)(?<![\w.])(\d+(?:\.\d+)?)\s*(lakhs?|lacs?|crores?|cr|k)\b\.?")
+# Hindi and Tamil amount words (after NFC, "ड़" is "ड" + nukta): लाख/लाखों -> lakh, करोड़/करोड़ों -> crore,
+# லட்சம் -> lakh, கோடி -> crore. No \b: Indic vowel signs are not word characters for the regex engine.
+_INDIC_AMOUNT = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)\s*(लाखों|लाख|करोड\u093c?ों|करोड\u093c?|லட்சம்|லட்சங்கள்|கோடி)")
+
+
+def _indic_unit(word: str) -> float:
+    return 1e5 if word.startswith(("लाख", "லட்ச")) else 1e7
+
+
 _GROUPED = re.compile(r"(?<![\d,])(\d{1,3}(?:,\d{2})+,\d{3}|\d{1,3}(?:,\d{3})+)(?:\.\d+)?(?![\d,])")
 
 
@@ -58,7 +68,8 @@ def _plain(v: float) -> str:
     return str(int(v)) if float(v).is_integer() else f"{v:.2f}"
 
 
-_QUANTITY = re.compile(r"(?i)(?<![a-z\d])(₹\s*\d|rs\.?\s*\d|\$\s*\d|\d[\d,]*(\.\d+)?\s*(%|per ?cent|lakhs?|lacs?|crores?|cr\b|k\b)|\d[\d,]*\.\d+|\d{2,})")
+_QUANTITY = re.compile(r"(?i)(?<![a-z\d])(₹\s*\d|rs\.?\s*\d|\$\s*\d|\d[\d,]*(\.\d+)?\s*(%|per ?cent|lakhs?|lacs?|crores?|cr\b|k\b|"
+                       r"लाख|करोड|லட்சம்|கோடி)|\d[\d,]*\.\d+|\d{2,})")
 
 
 def has_quantity(text: str) -> bool:
@@ -86,7 +97,13 @@ def normalize_amounts(text: str) -> tuple[str, list[dict]]:
         found.append({"text": m.group(0), "value": value})
         return f"{m.group(0)} (= {_plain(value)})"
 
+    def indic(m):
+        value = float(m.group(1)) * _indic_unit(m.group(2))
+        found.append({"text": m.group(0).strip(), "value": value})
+        return f"{m.group(0).rstrip()} (= {_plain(value)})"
+
     text = _WORD_AMOUNT.sub(word, text)
+    text = _INDIC_AMOUNT.sub(indic, text)
     if not is_tabular(text):  # in a pasted table, annotating every cell only adds noise
         text = _GROUPED.sub(grouped, text)
     return text, found
@@ -102,7 +119,8 @@ _HIGH_RISK = re.compile(r"(?i)\b(crypto\w*|bitcoin|ethereum|btc|eth|nfts?|f&o|fu
                         r"margin trading|penny stocks?|forex|binary options?|grey market|gmp|day trading|derivatives? trading)\b")
 _CALC = re.compile(r"(?i)\b(calculate|compute|how much|what (will|would) (be|i|my)|emi|sip|future value|present value|maturity|"
                    r"cagr|irr|npv|ytm|yield|bond price|price of (a|the) bond|option price|black[- ]scholes|interest on|returns? on|"
-                   r"total interest|corpus|duration of|break[- ]?even|percent(age)? of|% of|gst)\b")
+                   r"total interest|corpus|duration of|break[- ]?even|percent(age)? of|% of|gst)\b"
+                   r"|कितनी|कितना|कितने|गणना|எவ்வளவு|கணக்கிடு")      # Hindi / Tamil "how much", "calculate"
 _STATEMENT = re.compile(r"(?i)\b(balance sheet|profit (and|&) loss|p&l|income statement|cash flow statement|cash flows?|"
                         r"ratios?|working capital|current assets?|current liabilit\w+|reserves and surplus|net worth|ebitda|ebit|"
                         r"debtors|creditors|depreciation|dupont|roe|roa|liquidity|leverage)\b")
@@ -118,7 +136,7 @@ _CORPORATE = re.compile(r"(?i)\b(earnings per share|eps|p/e|price[- ](to[- ])?ea
                         r"|\b(costs?|net income|depreciation|profit)\b.*\bsales\b")
 _REGULATORY = re.compile(r"(?i)\b(sebi|rbi|amfi|dicgc|tax\w*|tds|section \d+\w*|rule|regulation|regulat\w+|law|legal|illegal|allowed|"
                          r"ombudsman|complaint|insur\w+|kyc|registered|licen[cs]\w*|circular|guideline|compliance)\b")
-_GIVEN_RATE = re.compile(r"(?i)\b(tax|gst|tds)\s+rate\s+(of\s+|is\s+|at\s+)?\d+(\.\d+)?\s*(%|percent|per cent)?|\d+(\.\d+)?\s*(%|percent|per cent)\s+(tax|gst|tds)(\s+rate)?")
+_GIVEN_RATE = re.compile(r"(?i)\b(tax|gst|tds)\s+rate\s+((of|is|at|were|was|to|becomes|=)\s+)?\d+(\.\d+)?\s*(%|percent|per cent)?|\d+(\.\d+)?\s*(%|percent|per cent)\s+(tax|gst|tds)(\s+rate)?")
 _INVEST = re.compile(r"(?i)\b(invest\w*|stocks?|shares?|equity|mutual funds?|sip|returns?|portfolio|ipo|bonds?|fd|fixed deposit|"
                      r"gold|real estate|nps|ppf|elss|etf|trading|crypto\w*|savings?)\b")
 
@@ -149,17 +167,24 @@ def is_followup(text: str) -> bool:
 
 
 def precheck(user_text: str, previous_question: str | None = None) -> PrecheckResult:
-    clean, redactions = redact(user_text)
+    clean, redactions = redact(unicodedata.normalize("NFC", user_text or ""))
     normalized, amounts = normalize_amounts(clean)
     has_number = has_quantity(clean)
     statement = bool(_STATEMENT.search(clean) or _CORPORATE.search(clean)) and has_number or is_tabular(clean)
     followup = bool(previous_question) and is_followup(clean)
     routed_text = f"{redact(previous_question)[0]} {clean}" if followup else clean
     calc_types = detect_calc_types(routed_text, has_quantity(routed_text), statement)
-    if {"npv_irr", "eac"} & set(calc_types) and not (_CORPORATE.search(clean) or _STATEMENT_DOC.search(clean)):
+    if "project" in calc_types or (
+            {"npv_irr", "eac", "perpetuity"} & set(calc_types) and not (_CORPORATE.search(clean) or _STATEMENT_DOC.search(clean))):
         statement = False                                  # a table of project cash flows (or a cost comparison) is not a statement
         calc_types = [k for k in calc_types if k != "statement"]
-    usd = bool(re.search(r"\$\s?\d|\bUSD\b|\bdollars?\b", clean, re.I)) and not re.search(r"₹|\brs\.?\s?\d|\binr\b|rupee|lakh|crore", clean, re.I)
+    elif set(calc_types) - {"statement", "percent"} and not (_STATEMENT.search(clean) or _CORPORATE.search(clean)
+                                                             or _STATEMENT_DOC.search(clean)):
+        statement = False          # several numbered lines ("Note: round to 2 decimals, e.g., 32.16") are not a pasted statement
+        calc_types = [k for k in calc_types if k != "statement"]
+    # a follow-up keeps the previous question's currency ("what if the rate were 9%?" after a $ question)
+    usd = bool(re.search(r"\$\s?\d|\bUSD\b|\bdollars?\b", routed_text, re.I)) and not re.search(
+        r"₹|\brs\.?\s?\d|\binr\b|rupee|lakh|crore", routed_text, re.I)
     flags = {
         "currency": "USD" if usd else "INR",
         "followup": followup and bool(calc_types),   # only calculation follow-ups get the "reuse the numbers" note

@@ -7,20 +7,21 @@ def get_chat_model(settings: Settings | None = None):
     if s.backend == "ollama":
         from langchain_ollama import ChatOllama
         return ChatOllama(model=s.model, base_url=s.base_url, reasoning=s.thinking, num_ctx=s.num_ctx,
-                          temperature=s.temperature, num_predict=s.max_output_tokens, keep_alive="60m")
+                          temperature=s.temperature, num_predict=s.output_cap("ollama"), keep_alive="60m")
     if s.backend == "openai":  # vLLM or any OpenAI-compatible server (fine-tune data generation)
         try:
             from langchain_openai import ChatOpenAI
         except ImportError as exc:
             raise RuntimeError("Install langchain-openai to use FINBOT_BACKEND=openai.") from exc
-        return ChatOpenAI(model=s.model, base_url=s.base_url, api_key="not-needed", temperature=s.temperature)
+        return ChatOpenAI(model=s.model, base_url=s.base_url, api_key="not-needed", temperature=s.temperature,
+                          max_tokens=s.output_cap("openai"))
     raise ValueError(f"Unknown FINBOT_BACKEND: {s.backend}")
 
 
 def _ollama(model: str, url: str, s: Settings):
     from langchain_ollama import ChatOllama
     return ChatOllama(model=model, base_url=url, reasoning=s.thinking, num_ctx=s.num_ctx, temperature=s.temperature,
-                      num_predict=s.max_output_tokens, keep_alive="60m")
+                      num_predict=s.output_cap("ollama"), keep_alive="60m")
 
 
 def get_runnables(tools: list, settings: Settings | None = None):
@@ -31,14 +32,17 @@ def get_runnables(tools: list, settings: Settings | None = None):
         m = _ollama(s.model, s.base_url, s)
         return m, m.bind_tools(tools)
     from langchain_openai import ChatOpenAI
+
+    from .tools.schemas import compact_tool_schemas
     primary = ChatOpenAI(model=s.model, base_url=s.base_url, api_key="not-needed", temperature=s.temperature,
-                         max_tokens=s.max_output_tokens, timeout=s.request_timeout, max_retries=0,
+                         max_tokens=s.output_cap("openai"), timeout=s.request_timeout, max_retries=0,
                          extra_body={"chat_template_kwargs": {"enable_thinking": s.thinking}})
+    compact = compact_tool_schemas(tools)   # vLLM renders schemas into the 16k context: send the compact copies (SPEC 3.1)
     if not s.fallback_model or s.fallback_model.lower() == "none":  # e.g. on the GPU box itself
-        return primary, primary.bind_tools(tools)
+        return primary, primary.bind_tools(compact)
     fallback = _ollama(s.fallback_model, s.fallback_url, s)
     return (primary.with_fallbacks([fallback]),
-            primary.bind_tools(tools).with_fallbacks([fallback.bind_tools(tools)]))
+            primary.bind_tools(compact).with_fallbacks([fallback.bind_tools(tools)]))
 
 
 def get_embedder(settings: Settings | None = None):
