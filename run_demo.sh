@@ -14,4 +14,4 @@ echo "Warming up $MODEL (context $CTX) and the embedding model…"
 curl -sf localhost:11434/api/generate -d "{\"model\":\"$MODEL\",\"prompt\":\"hi\",\"stream\":false,\"keep_alive\":\"3h\",\"options\":{\"num_ctx\":$CTX,\"num_predict\":1}}" >/dev/null
 curl -sf localhost:11434/api/embed -d '{"model":"bge-m3","input":"warm up","keep_alive":"3h"}' >/dev/null
 echo "Opening FinBot…"
-exec uv run --offline streamlit run app.py --browser.gatherUsageStats false
+exec uv run --offline streamlit run app.py --server.address localhost --browser.gatherUsageStats false

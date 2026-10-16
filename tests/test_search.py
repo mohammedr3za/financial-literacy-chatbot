@@ -83,3 +83,7 @@ def test_html_to_text_drops_scripts():
 
 def test_clean_rejoins_hyphenation():
     assert clean("invest-\nment  adviser") == "investment adviser"
+
+
+def test_clean_converts_pdf_glyph_names():
+    assert clean("investing /uni20B9.INDIAN_RUPEE_SIGN1,000 and /uni20B913.38 Lakh") == "investing ₹1,000 and ₹13.38 Lakh"

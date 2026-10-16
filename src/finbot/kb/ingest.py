@@ -48,7 +48,11 @@ def html_to_text(html: str) -> str:
     return clean("\n".join(p.parts))
 
 
+_GLYPH = re.compile(r"/uni([0-9A-Fa-f]{4})(?:\.[A-Z][A-Za-z_]*)?")
+
+
 def clean(text: str) -> str:
+    text = _GLYPH.sub(lambda m: chr(int(m.group(1), 16)), text)  # PDF glyph names, e.g. /uni20B9 -> ₹
     text = text.replace(" ", " ")
     text = re.sub(r"-\n(\w)", r"\1", text)          # re-join hyphenated line breaks
     text = re.sub(r"[ \t]+", " ", text)

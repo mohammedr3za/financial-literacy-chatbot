@@ -50,8 +50,9 @@ def render_trace(t: dict) -> None:
             st.warning(f"Removed before reaching the model: {', '.join(t['redactions'])}. Please never share personal details with a chatbot.")
         flags = [FLAG_LABELS[k] for k, v in t["flags"].items() if v and k in FLAG_LABELS]
         st.markdown("**Pre-check:** " + (", ".join(flags) if flags else "nothing unusual"))
-        if t["amounts"]:
-            st.markdown("**Amounts understood as:** " + ", ".join(f"{a['text']} = {a['value']:,.0f}" for a in t["amounts"]))
+        converted = [a for a in t["amounts"] if re.search(r"(?i)lakh|lac|crore|cr|k\b", a["text"])]
+        if converted:
+            st.markdown("**Amounts understood as:** " + ", ".join(f"{a['text']} = {a['value']:,.0f}" for a in converted))
         for x in t["tools"]:
             out = x["output"]
             st.markdown(f"**Calculator `{x['name']}`**")
@@ -107,18 +108,21 @@ for m in st.session_state.history:
             render_trace(m["trace"])
 
 prompt = None
+examples = st.empty()
 if not st.session_state.history:
-    st.caption("Try one of these:")
-    cols = st.columns(2)
-    for i, ex in enumerate(EXAMPLES):
-        if cols[i % 2].button(ex, key=f"ex{i}", use_container_width=True):
-            prompt = ex
+    with examples.container():
+        st.caption("Try one of these:")
+        cols = st.columns(2)
+        for i, ex in enumerate(EXAMPLES):
+            if cols[i % 2].button(ex, key=f"ex{i}", use_container_width=True):
+                prompt = ex
 
 capped = used >= SETTINGS.session_cap
 typed = st.chat_input("Ask a finance question…" if not capped else "Session limit reached. Start a new conversation.", disabled=capped)
 prompt = typed or prompt
 
 if prompt and not capped:
+    examples.empty()
     shown = redact(prompt)[0]
     st.session_state.history.append({"role": "user", "content": shown})
     with st.chat_message("user"):
@@ -144,3 +148,4 @@ if prompt and not capped:
             st.markdown(to_markdown(trace["answer"]))
             render_trace(trace)
             st.session_state.history.append({"role": "assistant", "content": trace["answer"], "trace": trace})
+            st.rerun()  # redraw so the question counter and example buttons reflect the new turn
