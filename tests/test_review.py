@@ -105,3 +105,25 @@ def test_supported_figures_pass_including_lakh_and_tool_outputs():
 def test_figures_check_only_applies_to_regulatory_questions():
     r = review_answer("If yields rise by 1%, the price falls by about 4%.", flags(), [], 0, (), "")
     assert r.passed
+
+
+# check 1: a guarantee phrase in a warning is not a promise (2026-10-17 question bank)
+def test_warnings_about_guaranteed_returns_are_not_guarantee_language():
+    for text in ['The regulator forbids any adviser from offering "assured or guaranteed returns" [S1].',
+                 'Stay cautious of anyone offering “assured returns” or asking for your login.',
+                 'Be wary of unregistered channels promising assured returns; no return can be promised.',
+                 'Fake platforms may falsely promise assured profits to new users.',
+                 'Groups that talk about "guaranteed returns" are usually a fraud.']:
+        assert "guarantee_language" not in review_answer(text, flags(), [], 0).codes, text
+
+
+def test_promises_of_guaranteed_returns_are_still_caught():
+    for text in ["This plan offers guaranteed returns of 9% a year.",
+                 "Yes, this stock will definitely give you 30% this year.",
+                 "You get assured returns with this scheme."]:
+        assert "guarantee_language" in review_answer(text, flags(), [], 0).codes, text
+
+
+def test_a_caution_word_in_the_next_sentence_does_not_excuse_a_promise():
+    text = "This fund gives guaranteed 12% returns. Beware of fake apps that copy its name."
+    assert "guarantee_language" in review_answer(text, flags(), [], 0).codes

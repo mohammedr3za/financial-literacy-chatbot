@@ -110,10 +110,22 @@ _BUY_CALL = re.compile(r"(?i)\b(you should|i (would |'d )?recommend|i suggest|go
                        r"\s+(buy(ing)?|sell(ing)?|invest(ing)? in|put(ting)? (your|all)|go(ing)? for)\b")
 
 
+# a guarantee phrase in a warning is not a promise (SPEC 3.1 check 1): quoted, or in a sentence with a caution word
+_CAUTION = re.compile(r"(?i)\b(prohibit\w*|forbid\w*|not allowed|illegal|bann?ed|beware|wary|cautious|careful|caution\w*|"
+                      r"avoid\w*|fraud\w*|scam\w*|ponzi|falsely|fake|lure\w*|red[- ]flags?|too good to be true|unregistered|"
+                      r"warning signs?|mis-?sell\w*)\b")
+
+
+def _quoted(text: str, m: re.Match) -> bool:
+    return bool(re.match(r'\s?["”]', text[m.end():m.end() + 2]) and re.search(r'["“][^"”]*$', text[max(0, m.start() - 40):m.start()]))
+
+
 def _has_unnegated_guarantee(text: str) -> bool:
     for m in _GUARANTEE_PHRASES.finditer(text):
         window = text[max(0, m.start() - 40):m.start()]
-        if not re.search(rf"(?i)\b{_NEG}\b", window):
+        ends = [i for i in (text.find(". ", m.end()), text.find("\n", m.end())) if i >= 0]
+        sentence = text[max(text.rfind(". ", 0, m.start()), text.rfind("\n", 0, m.start()), 0):min(ends, default=len(text))]
+        if not (re.search(rf"(?i)\b{_NEG}\b", window) or _quoted(text, m) or _CAUTION.search(sentence)):
             return True
     return False
 
