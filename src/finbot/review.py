@@ -88,7 +88,7 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
         issues.append("The question needs a calculation but no calculator tool was called. Call the right tool and use its exact result.")
     needs_risk = (flags.get("high_risk_topic") or flags.get("guarantee_seeking") or flags.get("personal_advice_request") or (
         flags.get("investment_topic") and not flags.get("regulatory_topic") and not flags.get("calculation_intent")
-        and not flags.get("concept_question")))
+        and not flags.get("concept_question") and not flags.get("statement_data")))
     if needs_risk and not _RISK_WORDS.search(text):
         codes.append("no_risk_disclosure")
         issues.append("It discusses an investment without stating the risks. Add a short, specific risk disclosure.")

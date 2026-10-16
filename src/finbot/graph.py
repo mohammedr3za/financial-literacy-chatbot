@@ -153,6 +153,14 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
     return g.compile(checkpointer=checkpointer if checkpointer is not None else InMemorySaver())
 
 
+_MD_TABLE = re.compile(r"(?:^[ \t]*\|.*\|[ \t]*\n?){2,}", re.M)
+
+
+def strip_model_tables(text: str) -> str:
+    """When exact tool tables exist, tables the model typed itself are removed so only exact figures are shown."""
+    return re.sub(r"\n{3,}", "\n\n", _MD_TABLE.sub("", text)).strip()
+
+
 def turn_trace(state: dict) -> dict:
     """Everything the UI's "How I got this" panel and the benchmark log need for the latest turn."""
     msgs, qi = state["messages"], state["question_idx"]
@@ -169,6 +177,10 @@ def turn_trace(state: dict) -> dict:
                     parsed = {"raw": raw}
                 tools.append({"name": tc["name"], "args": tc["args"], "output": parsed})
     final = next((m for m in reversed(msgs) if isinstance(m, AIMessage)), None)
+    tables = state.get("tables", [])
+    answer_text = text_of(final) if final else ""
+    if tables:
+        answer_text = strip_model_tables(answer_text)
     return {
         "question_sent_to_model": text_of(msgs[qi]),
         "flags": state.get("flags", {}), "redactions": state.get("redactions", []), "amounts": state.get("amounts", []),
@@ -177,9 +189,9 @@ def turn_trace(state: dict) -> dict:
                      "dense": h.get("dense"), "excerpt": h["text"][:300]} for i, h in enumerate(state.get("sources", []))],
         "rag_status": state.get("rag_status", ""), "best_dense": state.get("best_dense", 0.0),
         "review": state.get("review", {}), "revisions": state.get("revisions", 0),
-        "answer_text": text_of(final) if final else "",
-        "tables": state.get("tables", []),
-        "answer": "\n\n".join([text_of(final) if final else ""] + [to_markdown(t) for t in state.get("tables", [])]),
+        "answer_text": answer_text,
+        "tables": tables,
+        "answer": "\n\n".join([answer_text] + [to_markdown(t) for t in tables]),
     }
 
 

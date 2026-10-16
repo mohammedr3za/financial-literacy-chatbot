@@ -55,13 +55,11 @@ def test_balance_sheet_difference_reported():
 
 def test_cash_flow_indirect_method_reconciles():
     out = cash_flow_statement(
-        net_income=50_000,
-        non_cash_items=[{"item": "Depreciation", "amount": 10_000}],
-        working_capital=[{"item": "Receivables", "type": "current_asset", "change": 5_000},
-                         {"item": "Inventory", "type": "current_asset", "opening": 23_000, "closing": 20_000},
-                         {"item": "Payables", "type": "current_liability", "change": 4_000}],
-        investing=[{"item": "Purchase of equipment", "amount": -30_000}, {"item": "Sale of investments", "amount": 8_000}],
-        financing=[{"item": "Loan raised", "amount": 20_000}, {"item": "Dividends paid", "amount": -12_000}],
+        net_income=50_000, depreciation=10_000,
+        current_asset_changes={"Receivables": 5_000, "Inventory": [23_000, 20_000]},
+        current_liability_changes={"Payables": 4_000},
+        investing={"Purchase of equipment": -30_000, "Sale of investments": 8_000},
+        financing={"Loan raised": 20_000, "Dividends paid": -12_000},
         opening_cash=15_000, closing_cash=63_000)
     r = out["result"]
     assert (r["cfo"], r["cfi"], r["cff"], r["net_change"], r["computed_closing_cash"]) == (62_000, -22_000, 8_000, 48_000, 63_000)
@@ -76,6 +74,6 @@ def test_cash_flow_flags_mismatch():
     assert r["reconciles"] is False and r["unexplained_difference"] == 50
 
 
-def test_working_capital_item_needs_change_or_balances():
+def test_working_capital_entry_must_be_change_or_pair():
     with pytest.raises(ValueError):
-        cash_flow_statement(net_income=1, working_capital=[{"item": "Stock", "type": "current_asset"}])
+        cash_flow_statement(net_income=1, current_asset_changes={"Stock": [1, 2, 3]})

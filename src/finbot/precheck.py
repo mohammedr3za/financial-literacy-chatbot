@@ -87,7 +87,7 @@ _GUARANTEE = re.compile(r"(?i)\b(guarantee[sd]?|assured|sure[- ]?shot|risk[- ]?f
 _ADVICE = re.compile(r"(?i)\b(should i (buy|sell|invest|put|hold|exit|switch)|which (stock|share|fund|mutual fund|scheme|coin|crypto|etf|ipo)s? (should|to|can|is best)|"
                      r"best (stock|share|fund|mutual fund|coin|crypto|ipo|etf)s? (to|for)|where should i (invest|put)|"
                      r"(tell|suggest|recommend) (me )?(what|which|a|some|good)\s*(stock|share|fund|scheme|coin|to buy)|what should i (buy|invest))")
-_HIGH_RISK = re.compile(r"(?i)\b(crypto\w*|bitcoin|ethereum|btc|eth|nfts?|f&o|futures? and options?|options? trading|intraday|leverage[d]?|"
+_HIGH_RISK = re.compile(r"(?i)\b(crypto\w*|bitcoin|ethereum|btc|eth|nfts?|f&o|futures? and options?|options? trading|intraday|leveraged (trading|positions?|etfs?)|trading on leverage|"
                         r"margin trading|penny stocks?|forex|binary options?|grey market|gmp|day trading|derivatives? trading)\b")
 _CALC = re.compile(r"(?i)\b(calculate|compute|how much|what (will|would) (be|i|my)|emi|sip|future value|present value|maturity|"
                    r"cagr|irr|npv|ytm|yield|bond price|price of (a|the) bond|option price|black[- ]scholes|interest on|returns? on|"

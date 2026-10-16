@@ -80,7 +80,8 @@ def financial_ratios(**items) -> dict:
         dupont = result["net_margin_pct"] * result["asset_turnover"] * result["equity_multiplier"]
         result["dupont_roe_pct"] = round(d["net_income"] / d["revenue"] * d["revenue"] / d["total_assets"]
                                          * d["total_assets"] / d["total_equity"] * 100, 4)
-        rows.append(["Profitability", "DuPont ROE", "Net margin × Asset turnover × Equity multiplier", f"{dupont:.2f}%"])
+        at = next(i for i, r in enumerate(rows) if r[1] == "Return on equity") + 1
+        rows.insert(at, ["Profitability", "DuPont ROE", "Net margin × Asset turnover × Equity multiplier", f"{dupont:.2f}%"])
     if not result:
         raise ValueError("These items do not allow any standard ratio. Add matching items, e.g. revenue with net_income.")
     table = make_table("Financial ratios", ["Group", "Ratio", "Formula", "Value"], rows,
@@ -122,35 +123,40 @@ def balance_sheet_check(assets: dict, liabilities: dict, equity: dict) -> dict:
             "formatted": {}, "table": table}
 
 
-def cash_flow_statement(net_income: float, non_cash_items=None, working_capital=None, investing=None, financing=None,
+def _change(name: str, v) -> float:
+    """A working-capital entry is either the change (a number) or [opening, closing]."""
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, (list, tuple)) and len(v) == 2:
+        return float(v[1]) - float(v[0])
+    raise ValueError(f"{name}: give the change as a number, or [opening, closing] balances.")
+
+
+def cash_flow_statement(net_income: float, depreciation: float = 0.0, other_non_cash: dict | None = None,
+                        current_asset_changes: dict | None = None, current_liability_changes: dict | None = None,
+                        investing: dict | None = None, financing: dict | None = None,
                         opening_cash: float | None = None, closing_cash: float | None = None) -> dict:
     rows, bold = [["Operating activities", "Net income", group(net_income)]], []
     cfo = float(net_income)
-    for it in map(_as_dict, non_cash_items or []):
-        cfo += float(it["amount"])
-        rows.append(["", it["item"], group(float(it["amount"]))])
-    for it in map(_as_dict, working_capital or []):
-        kind = it.get("type")
-        if kind not in ("current_asset", "current_liability"):
-            raise ValueError(f"{it.get('item')}: type must be current_asset or current_liability.")
-        if it.get("change") is not None:
-            change = float(it["change"])
-        elif it.get("opening") is not None and it.get("closing") is not None:
-            change = float(it["closing"]) - float(it["opening"])
-        else:
-            raise ValueError(f"{it.get('item')}: give either change, or both opening and closing balances.")
-        effect = -change if kind == "current_asset" else change
-        cfo += effect
-        word = "Increase" if change > 0 else "Decrease" if change < 0 else "No change"
-        rows.append(["", f"{word} in {it['item']}", group(effect)])
+    adds = ({"Depreciation": depreciation} if depreciation else {}) | dict(other_non_cash or {})
+    for item, amt in adds.items():
+        cfo += float(amt)
+        rows.append(["", item, group(float(amt))])
+    for kind, items in (("current_asset", current_asset_changes), ("current_liability", current_liability_changes)):
+        for item, v in (items or {}).items():
+            change = _change(item, v)
+            effect = -change if kind == "current_asset" else change
+            cfo += effect
+            word = "Increase" if change > 0 else "Decrease" if change < 0 else "No change"
+            rows.append(["", f"{word} in {item}", group(effect)])
     bold.append(len(rows))
     rows.append(["", "Net cash from operating activities", group(cfo)])
     totals = {}
     for section, items in (("Investing activities", investing), ("Financing activities", financing)):
         sub = 0.0
-        for j, it in enumerate(map(_as_dict, items or [])):
-            sub += float(it["amount"])
-            rows.append([section if j == 0 else "", it["item"], group(float(it["amount"]))])
+        for j, (item, amt) in enumerate((items or {}).items()):
+            sub += float(amt)
+            rows.append([section if j == 0 else "", item, group(float(amt))])
         bold.append(len(rows))
         rows.append(["" if items else section, f"Net cash from {section.lower()}", group(sub)])
         totals[section] = sub

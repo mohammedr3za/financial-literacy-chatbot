@@ -1,4 +1,5 @@
 """Indian-rupee formatting: lakh/crore digit grouping."""
+import re
 
 
 def format_inr(value: float, decimals: int = 2) -> str:
@@ -49,5 +50,9 @@ def make_table(title: str, columns: list[str], body: list[list[str]], total: lis
         note = (note + " " if note else "") + f"Showing the first {MAX_TABLE_ROWS} of {n} rows."
     rows = body + ([total] if total else [])
     bold = sorted(set((bold_rows or []) + ([len(rows) - 1] if total else [])))
-    return {"title": title, "columns": columns, "rows": rows, "bold_rows": bold, "note": note,
-            "align": ["left"] + ["right"] * (len(columns) - 1)}
+    numeric = re.compile(r"^[\(\-−]?[₹]?[\d,]+(\.\d+)?\)?(%| days|×)?$")
+    align = []
+    for j in range(len(columns)):
+        cells = [r[j] for r in body if j < len(r) and str(r[j]).strip() not in ("", "–")]
+        align.append("right" if j > 0 and cells and sum(bool(numeric.match(str(c))) for c in cells) >= 0.8 * len(cells) else "left")
+    return {"title": title, "columns": columns, "rows": rows, "bold_rows": bold, "note": note, "align": align}

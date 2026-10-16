@@ -86,3 +86,9 @@ def test_tables_are_collected_and_appended_to_shown_answer_only():
     model.responses.append("Sure.")
     fb.ask("Thanks", thread_id="tbl")
     assert "Opening balance" not in "\n".join(str(m.content) for m in model.calls[-1] if m.type == "ai")
+
+
+def test_model_written_table_is_removed_when_tool_table_exists():
+    from finbot.graph import strip_model_tables
+    text = "EMI is ₹17,356.46.\n\n| Year | Interest |\n|--|--|\n| 1 | 999 |\n\nSee the schedule below."
+    assert strip_model_tables(text) == "EMI is ₹17,356.46.\n\nSee the schedule below."

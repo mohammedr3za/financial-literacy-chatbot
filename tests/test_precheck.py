@@ -81,3 +81,8 @@ def test_pasted_statement_is_detected_and_not_annotated():
 
 def test_plain_question_with_grouped_amount_still_annotated():
     assert "(= 120000)" in precheck("Is ₹1,20,000 enough for an emergency fund?").text
+
+
+def test_leverage_in_ratio_question_is_not_high_risk():
+    assert not precheck("Analyse its leverage and liquidity").flags["high_risk_topic"]
+    assert precheck("Should I do leveraged trading in F&O?").flags["high_risk_topic"]
