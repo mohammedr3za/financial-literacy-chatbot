@@ -88,11 +88,18 @@ def benchmark_questions() -> list[str]:
     return [x.lower() for x in out + [p["question"] for p in calc["problems"] + held["problems"]]]
 
 
-def to_record(state: dict) -> dict:
-    """Rebuild exactly what the student model sees at inference: system prompt, context block, tool turns, answer."""
+def to_record(state: dict, strip_revision: bool = False) -> dict:
+    """Rebuild exactly what the student model sees at inference: system prompt, context block, tool turns, answer.
+    strip_revision: when the first draft was sent back by the reviewer, keep only the corrected turn (drop the bad
+    draft and the reviewer note), so the student learns the right behaviour directly."""
     from finbot.prompts import SYSTEM_PROMPT, context_block
     from finbot.graph import text_of
     msgs, qi = state["messages"], state["question_idx"]
+    if strip_revision:
+        notes = [i for i in range(qi + 1, len(msgs)) if isinstance(msgs[i], HumanMessage)]
+        if len(notes) != 1:
+            return {}
+        msgs = msgs[: qi + 1] + msgs[notes[0] + 1:]
     ctx = context_block(text_of(msgs[qi]), state["flags"], state.get("redactions", []), state.get("sources", []),
                         state.get("rag_status", ""))
     out = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": ctx}]
@@ -249,15 +256,17 @@ def run_questions(a, bench) -> int:
         golds = gold_numbers(q.get("gold_answer")) if q.get("type") == "numeric" else []
         if golds:
             info["gold_ok"] = all(calc_correct(t["answer"], q["question"], g, 1.0)[0] for g in golds[:6])
-        if not t["review"].get("passed") or t["revisions"]:
+        if not t["review"].get("passed") or t["revisions"] > 1:
             return q, "review", None, info
         if golds and not info["gold_ok"]:
             return q, "wrong", None, info
+        if t["revisions"] and re.search(r"(?i)reviewer|previous (answer|draft|response)|apologi|as noted above", t["answer"]):
+            return q, "review", None, info
         state = local.bot.graph.get_state({"configurable": {"thread_id": f"gen-{q['id']}"}}).values
-        rec = to_record(state)
+        rec = to_record(state, strip_revision=bool(t["revisions"]))
         if not rec:
             return q, "review", None, info
-        rec.update(tools=schemas, source=q.get("source", "collected"), qid=q["id"], qtype=q.get("type"))
+        rec.update(tools=schemas, source=q.get("source", "collected"), qid=q["id"], qtype=q.get("type"), revised=bool(t["revisions"]))
         return q, "kept", rec, info
 
     with out.open("a", encoding="utf-8") as f, attempts.open("a", encoding="utf-8") as fa, ThreadPoolExecutor(a.workers) as pool:
