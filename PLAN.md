@@ -10,9 +10,9 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - **Acceptance:** at least 4 of 5 correct tool calls, and a median answer time of 30 s or less. Otherwise switch to the fallback model and log the change in SPEC.
 
 ## M1 — Tools, test-first (Fri–Sat)
-- [ ] `calculators.py`: `tvm`, `loan_emi`, `sip_future_value`, `npv_irr`, `bond_metrics`, `black_scholes`
-- [ ] `math_engine.py`: `calculate` (AST whitelist) and `solve_equation` (sanitized SymPy)
-- [ ] `registry.py`: LangChain tool wrappers with ₹ lakh and crore formatting
+- [x] `calculators.py`: `tvm`, `loan_emi`, `sip_future_value`, `npv_irr`, `bond_metrics`, `black_scholes`
+- [x] `math_engine.py`: `calculate` (AST whitelist) and `solve_equation` (sanitized SymPy)
+- [x] `registry.py`: LangChain tool wrappers with ₹ lakh and crore formatting
 - **Acceptance:** `uv run pytest tests/test_calculators.py tests/test_math_engine.py` passes. The EMI for ₹20 lakh at 8.5% over 240 months is ≈ ₹17,356, and malicious expressions are rejected.
 
 ## M2 — Knowledge base (Sat AM)
@@ -64,3 +64,9 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 
 - Decision: keep `qwen3.5:9b` with thinking off.
 - Failure found: for "₹20 lakh", both modes passed `principal=200000` (10× too small). Fix: precheck normalizes lakh/crore amounts (SPEC changelog 2026-10-16). Must be covered by a test in M3.
+
+### 2026-10-16 — M1 closed
+- `uv run pytest -q` → **60 passed**.
+- Reference values come from textbooks, not our code: EMI ₹17,356.46 (₹20 lakh, 8.5%, 240 months); SIP ₹23,23,390.76 (₹10,000/month, 12%, 10 years); bond Macaulay duration 4.1699 (5-year 10% par); Black-Scholes call 4.7594 / put 0.8086 (Hull's example).
+- Rejected inputs include `__import__('os')`, attribute access, lists, `10**10**10`, unknown names, and `20,00,000` (with a hint to drop separators).
+- Bug found by the tests and fixed: solving `tvm` for years overflowed because the search started at 10,000 periods; the search range now grows step by step.
