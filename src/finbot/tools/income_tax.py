@@ -125,7 +125,8 @@ def income_tax(gross_salary: float, financial_year: str = "2026-27", regime: str
         raise ValueError("regime must be 'new', 'old' or 'both'.")
     if gross_salary <= 0 and other_income <= 0:
         raise ValueError("gross_salary is the yearly gross salary in rupees (₹30 lakh = 3000000); freelance or business "
-                         "income goes in other_income (no standard deduction).")
+                         "income goes in other_income (no standard deduction). For a question about a tax rule, limit or "
+                         "deduction (not tax on the user's own income), call tax_rules instead.")
     if gross_salary < 100_000 and hra_received > gross_salary:
         raise ValueError("gross_salary looks monthly; pass the yearly amount (monthly × 12).")
     missing, notes = [], []

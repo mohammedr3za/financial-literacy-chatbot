@@ -261,7 +261,7 @@ def test_capital_budgeting_routes(q, kinds):
 
 def test_project_and_annuity_hints():
     from finbot.routing import HINTS, REQUIRED_TOOLS
-    assert REQUIRED_TOOLS["project"] == {"project_cash_flows"} and REQUIRED_TOOLS["perpetuity"] == {"perpetuity"}
+    assert REQUIRED_TOOLS["project"] == {"project_cash_flows"} and REQUIRED_TOOLS["perpetuity"] == {"perpetuity", "calculate"}   # two-stage dividend models need calculate
     assert "sunk" in HINTS["project"] and "solve_bid_price" in HINTS["project"]
     assert "annuity_values" in HINTS["annuity"] and "payments_per_year" in HINTS["loan"]
 

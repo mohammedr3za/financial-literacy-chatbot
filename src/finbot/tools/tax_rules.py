@@ -31,7 +31,7 @@ def tax_rules(financial_year: str = "2026-27", topic: str = "all") -> dict:
             "zero_tax_salary": new_limit + T.STANDARD_DEDUCTION["new"], "marginal_relief": "tax above ₹12 lakh is capped at the income above ₹12 lakh",
             "cess_pct": T.CESS_PCT, "surcharge": [f"{p}% above {format_inr(x, 0)}" for x, p in T.SURCHARGE["new"]],
             "employer_nps_80ccd2_cap_pct_of_basic_da": 14,
-            "deductions_allowed": "standard deduction and employer NPS (80CCD(2)) only; no 80C, 80D, HRA or home-loan interest",
+            "deductions_allowed": "standard deduction and employer NPS (80CCD(2)) only; no 80C, 80CCD(1B) (own NPS), 80D, HRA or home-loan interest",
         },
         "old_regime": {
             "slabs_below_60": _slabs(T.OLD_SLABS["below_60"]), "slabs_60_to_79": _slabs(T.OLD_SLABS["60_to_79"]),

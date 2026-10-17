@@ -95,3 +95,20 @@ def test_rule_answer_quoting_tax_rules_is_kept():
                                      "The standard deduction under the new regime is ₹75,000 for FY 2025-26."])
     t = FinBot(model=model, kb=make_kb()).ask(q, thread_id="rules")
     assert "75,000" in t["answer_text"] and "could not compute" not in t["answer_text"]
+
+
+# ---------- follow-ups from the fixed-code test-bank run (2026-10-17)
+def test_new_regime_rules_say_80ccd1b_is_not_allowed():
+    allowed = tax_rules(topic="new_regime")["result"]["new_regime"]["deductions_allowed"]
+    assert "80CCD(1B)" in allowed and "no " in allowed
+
+
+def test_income_tax_without_income_points_rule_questions_to_tax_rules():
+    out = json.loads(TOOLS_BY_NAME["income_tax"].invoke({"regime": "new"}))
+    assert "tax_rules" in out["error"]
+
+
+def test_duration_and_two_stage_dividend_questions_may_be_answered_with_calculate():
+    from finbot.routing import missing_tools
+    assert missing_tools(["bond"], ["calculate"]) == [] and missing_tools(["perpetuity"], ["calculate"]) == []
+    assert missing_tools(["bond"], ["loan_emi"]) == ["bond"]
