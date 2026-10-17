@@ -242,3 +242,11 @@ def test_a_think_block_left_in_a_reply_is_removed():
     fb, _ = bot("<think>\n\n</think>\n\nA mutual fund pools money from many investors; its value moves with the market.")
     t = fb.ask("What is a mutual fund?", thread_id="think-strip")
     assert "<think>" not in t["answer"] and t["answer_text"].startswith("A mutual fund")
+
+
+# ---------- vLLM keep-alive: idle connections are dropped before the server's 5 s timeout (stale-connection errors)
+def test_openai_client_drops_idle_connections_before_vllm_does():
+    from finbot.llm import _openai
+    m = _openai(Settings(backend="openai"))
+    pool = m.root_client._client._transport._pool
+    assert pool._keepalive_expiry is not None and pool._keepalive_expiry < 5
