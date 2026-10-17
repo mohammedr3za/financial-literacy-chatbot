@@ -9,7 +9,7 @@ const EXAMPLES = [   // [short chip label, full question sent on click]
 ];
 const FLAGS = { guarantee_seeking: "asks for a guarantee", personal_advice_request: "asks what to buy", high_risk_topic: "high-risk topic",
   calculation_intent: "calculation", regulatory_topic: "Indian rules or tax", statement_data: "financial statement" };
-const MODEL_TAGS = { "finbot-8b-v3": "8B v3" };
+const MODEL_TAGS = { "finbot-8b-v3": "8B v3", "qwen3.6-27b": "27B v1" };
 const MAX_TURNS = 25, MAX_FILE = 200_000;
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -28,7 +28,7 @@ function setOnline(ok) { online = ok; $("#offline").hidden = ok; $("#send").disa
 function setWhere(host, model) {
   const w = $("#where");
   if (!host) { w.hidden = true; return; }
-  const tag = MODEL_TAGS[model] ? " " + MODEL_TAGS[model] : "";   // the fine-tuned model is named; the 27B shows just "Lambda"
+  const tag = MODEL_TAGS[model] ? " " + MODEL_TAGS[model] : "";   // the model behind the site is named on the badge
   w.textContent = (host === "cloud" ? "Lambda" : "Local") + tag;
   w.className = "where " + host; w.hidden = false;
 }
