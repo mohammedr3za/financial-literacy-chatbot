@@ -38,7 +38,7 @@ cd ~/finbot-train
 ~/train-env/bin/python finetune.py --base Qwen/Qwen3-8B --data sft_v2_final.jsonl --out out_v2
 echo EXITED \$?
 EOS
-chmod +x run_v2.sh && nohup ./run_v2.sh > train_v2.log 2>&1 < /dev/null & echo started'
+chmod +x run_v2.sh && { nohup ./run_v2.sh > train_v2.log 2>&1 < /dev/null & } && echo started'   # & on nohup only, or ssh waits for training
   ;;
 fetch)
   mkdir -p train/out_v2
