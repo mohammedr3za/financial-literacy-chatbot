@@ -9,7 +9,7 @@ set -a; . ./.env; set +a
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=20 ubuntu@$IP"
 
 echo "== copy code and the public index =="
-rsync -az --delete --exclude .venv --exclude .git --exclude 'kb/raw' --exclude results --exclude web --exclude .env \
+rsync -az --delete --exclude .venv --exclude .git --exclude 'kb/raw' --exclude results --exclude web --exclude .env --exclude 'train/out*' --exclude '*.gguf' \
       --exclude '__pycache__' --exclude '.pytest_cache' ./ "ubuntu@$IP:~/finbot/"
 
 echo "== remote setup =="
@@ -34,7 +34,7 @@ export FINBOT_BACKEND=openai FINBOT_BASE_URL=http://127.0.0.1:8000/v1 FINBOT_MOD
 exec ~/.local/bin/uv run uvicorn finbot.api:app --host 127.0.0.1 --port 8080 --workers 1
 EOS
 chmod 700 ~/start_api.sh
-nohup ~/start_api.sh > ~/api.log 2>&1 &
+nohup ~/start_api.sh > ~/api.log 2>&1 < /dev/null &
 for i in $(seq 1 60); do curl -sf localhost:8080/api/health >/dev/null && break; sleep 1; done
 echo "api health: $(curl -s localhost:8080/api/health)"
 # HTTPS address via a Cloudflare quick tunnel (no open ports on the instance).
@@ -44,7 +44,7 @@ if ! command -v cloudflared >/dev/null; then
 fi
 pkill -f "[c]loudflared tunnel --no-autoupdate.*--url" 2>/dev/null || true
 : > ~/cloudflared-empty.yml   # Lambda images run their own cloudflared whose /etc/cloudflared/config.yml would 404 everything
-nohup cloudflared tunnel --no-autoupdate --config ~/cloudflared-empty.yml --url http://127.0.0.1:8080 > ~/tunnel.log 2>&1 &
+nohup cloudflared tunnel --no-autoupdate --config ~/cloudflared-empty.yml --url http://127.0.0.1:8080 > ~/tunnel.log 2>&1 < /dev/null &
 for i in $(seq 1 40); do URL=$(grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" ~/tunnel.log | head -1); [ -n "$URL" ] && break; sleep 1; done
 echo "TUNNEL_URL=$URL"
 REMOTE

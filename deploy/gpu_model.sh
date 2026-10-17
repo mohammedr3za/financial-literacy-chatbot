@@ -27,7 +27,7 @@ exec ~/vllm-env/bin/vllm serve Qwen/Qwen3.6-27B-FP8 --host 127.0.0.1 --port 8000
 EOS
 chmod +x ~/start_vllm.sh
 pkill -f "vllm serve" 2>/dev/null || true
-nohup ~/start_vllm.sh > ~/vllm.log 2>&1 &
+nohup ~/start_vllm.sh > ~/vllm.log 2>&1 < /dev/null &
 until grep -qE "Application startup complete|Engine core initialization failed" ~/vllm.log; do sleep 10; done
 grep -E "Application startup complete|Engine core initialization failed" ~/vllm.log | tail -1
 REMOTE
