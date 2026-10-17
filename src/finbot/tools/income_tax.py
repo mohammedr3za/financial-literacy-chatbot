@@ -6,7 +6,7 @@ eGazette texts of the Income-tax Act 2025 and Income-tax Rules 2026):
 - FY 2026-27 (tax year 2026-27), Income-tax Act 2025: the same slabs (s.202), rebate (s.156) and standard deduction
   (s.19); HRA's 50% rate covers 8 cities instead of 4 (Income-tax Rules 2026).
 Slab tax, rebate with marginal relief, surcharge with marginal relief, 4% cess. Special-rate income (capital gains
-under 111A/112/112A, crypto) is out of scope: the tool says so instead of guessing.
+under 111A/112/112A, crypto) is out of scope here: capital_gains handles listed equity (SPEC 4.4).
 """
 from .fmt import format_inr, make_table
 
@@ -105,14 +105,15 @@ def income_tax(gross_salary: float, financial_year: str = "2026-27", regime: str
                employer_type: str = "private", gross_salary_monthly: float = 0, hra_received_monthly: float = 0,
                rent_paid_monthly: float = 0, basic_da_monthly: float = 0, capital_gains_equity_stcg: float = 0,
                capital_gains_equity_ltcg: float = 0) -> dict:
-    """Annual income tax for a resident salaried individual. Amounts are yearly rupees; *_monthly inputs are × 12.
+    """Annual income tax for a resident individual. Amounts are yearly rupees; *_monthly inputs are × 12. Freelance or
+    business income is other_income (slab rates, no standard deduction); gross_salary may then be 0.
     Equity capital gains are rejected with an explanation: they are never folded into other_income."""
     if capital_gains_equity_stcg or capital_gains_equity_ltcg:
         raise ValueError(
             "Equity capital gains (profit from selling shares or equity mutual funds) are taxed at special rates under their "
             "own sections, outside the slab rates and outside the 87A rebate, so this tool does not compute them and they must "
-            "never be passed as other_income. Call income_tax again with the salary figures only, report that tax, and say "
-            "that the capital gain is taxed separately at special rates (see incometax.gov.in).")
+            "never be passed as other_income. Call capital_gains for the gain (purchase and sale values, holding period) and "
+            "income_tax again with the salary figures only, then report both.")
     gross_salary = gross_salary or 12 * gross_salary_monthly
     hra_received = hra_received or 12 * hra_received_monthly
     rent_paid = rent_paid or 12 * rent_paid_monthly
@@ -122,8 +123,9 @@ def income_tax(gross_salary: float, financial_year: str = "2026-27", regime: str
         raise ValueError("financial_year must be '2025-26' or '2026-27'.")
     if regime not in ("new", "old", "both"):
         raise ValueError("regime must be 'new', 'old' or 'both'.")
-    if gross_salary <= 0:
-        raise ValueError("gross_salary is the yearly gross salary in rupees (₹30 lakh = 3000000).")
+    if gross_salary <= 0 and other_income <= 0:
+        raise ValueError("gross_salary is the yearly gross salary in rupees (₹30 lakh = 3000000); freelance or business "
+                         "income goes in other_income (no standard deduction).")
     if gross_salary < 100_000 and hra_received > gross_salary:
         raise ValueError("gross_salary looks monthly; pass the yearly amount (monthly × 12).")
     missing, notes = [], []

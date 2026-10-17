@@ -34,6 +34,33 @@ _TAX_ASK = re.compile(r"\bincome[- ]?tax\b|\btax (liability|payable|outgo)\b|\bh
                      r"\bhow much\b[^.?]{0,40}\btax(es)?\b|\b(pay|owe)\b[^.?]{0,20}\btax(es)?\b", I)
 _TAX_CTX = re.compile(r"\bsalary\b|\bctc\b|\bregime\b|\bhra\b|\b80c\b|\b80d\b|\blakhs?\b|\bcrores?\b|₹|\brs\.?\s|\binr\b|per annum|\bp\.?a\.?\b", I)
 
+# capital gains: selling shares, stocks, equity funds or ETFs, asking about the tax (SPEC 4.4)
+_CG_ASSET = re.compile(r"\b(shares?|stocks?|equit(y|ies)|mutual funds?|\bmf\b|units|etfs?|demat)\b", I)
+_CG_EVENT = re.compile(r"\b(sell|sold|selling|sale|redeem\w*|redemption|profit|gains?)\b", I)
+_CG_TAX = re.compile(r"\btax\w*\b|\bltcg\b|\bstcg\b|capital gains?", I)
+_SALARY = re.compile(r"\b(salary|ctc|earn(s|ing)?|per month|a month|monthly income)\b", I)
+# tax rules: a limit, rate or deduction question, not a calculation on a salary (SPEC 4.4)
+_RULE_ITEM = re.compile(r"\bstandard deduction\b|\brebate\b|\b87a\b|\b80c+d?\b|\b80ccd|\b80d\b|\b80tta\b|\bsection \d+|"
+                        r"\bdeductions?\b|\bexempt(ion)?\b|\bslabs?\b|\bcess\b|\bsurcharge\b|\bzero (income )?tax\b|\bno tax\b", I)
+_RULE_ASK = re.compile(r"\bhow much\b|\bwhat('s| is| are)\b|\bmaximum\b|\bmax\b|\blimit\b|\ballowed\b|\beligible\b|\brate\b|"
+                       r"\bthreshold\b|\bcan i (claim|get)\b|\bhighest\b", I)
+_TAX_WORD = re.compile(r"\btax\w*\b|\bregime\b|\bitr\b|\bsection\b|\b80c|\b80d|\b87a\b", I)
+
+
+_INCOME_FIGURE = re.compile(  # the user's own income to compute on: "salary is ₹15 lakh", "I earn 45k a month", "18 LPA"
+    r"\b(salary|income|ctc|package|earnings?)\b[^.?\d]{0,25}(₹|rs\.?|inr)?\s*\d|"
+    r"\d[\d,.]*\s*(lakhs?|lacs?|crores?|k|lpa)?\s*(salary|income|ctc|package|lpa|per annum|p\.?a\.?|a month|per month|a year)\b|"
+    r"\b(earn|make|get|draw)\w*\s+(₹|rs\.?)?\s*\d", I)
+
+
+def _capital_gains(q: str) -> bool:
+    return bool(_CG_ASSET.search(q) and _CG_EVENT.search(q) and _CG_TAX.search(q))
+
+
+def _tax_rule(q: str) -> bool:
+    return bool(_RULE_ITEM.search(q) and _RULE_ASK.search(q) and _TAX_WORD.search(q))
+
+
 _PROJECT_ITEMS = re.compile(r"\b(depreciat\w*|salvage|net working capital|nwc|macrs|working capital)\b", I)
 _PROJECT_ASK = re.compile(r"\b(npv|net present value|bid price|required return|discount rate|project)\b", I)
 _PERPETUITY = re.compile(r"\bperpetuit\w*|\bperpetual\b|\bforever\b|\bindefinitely\b", I)
@@ -52,6 +79,8 @@ ROUTES = [  # (type, test) in priority order
     ("loan", lambda q: bool(_LOAN.search(q) and _LOAN_ASK.search(q)) and _loan_inputs(q)),
     ("cagr", lambda q: bool(re.search(r"\bcagr\b|compound(ed)? annual growth|annuali[sz]ed return", q, I))),
     ("income_tax", lambda q: bool(_TAX_ASK.search(q) and _TAX_CTX.search(q))),
+    ("capital_gains", _capital_gains),
+    ("tax_rules", _tax_rule),
     ("eac", lambda q: bool(re.search(r"equivalent annual (cost|annuity)|\beac\b|\beaa\b", q, I))),
     ("project", lambda q: bool(_PROJECT_ITEMS.search(q) and re.search(r"\btax", q, I) and _PROJECT_ASK.search(q))),
     ("perpetuity", lambda q: bool(_PERPETUITY.search(q))),
@@ -74,13 +103,15 @@ EXCLUSIVE = {"goal_saving": {"sip_fv", "lump_fv", "present_value"}, "present_val
              "perpetuity": {"npv_irr", "lump_fv", "present_value", "years", "annuity"},
              "annuity": {"lump_fv", "present_value", "sip_fv", "goal_saving", "years"},
              "eac": {"annuity"}, "withdrawal": {"goal_saving", "present_value"},
-             "sip_fv": {"lump_fv"}}
+             "sip_fv": {"lump_fv"},
+             "capital_gains": {"percent", "lump_fv", "cagr", "years", "tax_rules"}}
 
 REQUIRED_TOOLS = {
     "goal_saving": {"goal_saving"}, "present_value": {"tvm", "goal_saving"}, "years": {"tvm"},
     "real_return": {"real_return"}, "effective_rate": {"effective_annual_rate"}, "emi": {"loan_emi"}, "loan": {"loan_emi"},
     "loan_rate": {"loan_emi"},
     "cagr": {"tvm"}, "npv_irr": {"npv_irr"}, "eac": {"equivalent_annual_cost", "npv_irr"}, "income_tax": {"income_tax"}, "bond": {"bond_metrics"},
+    "capital_gains": {"capital_gains"}, "tax_rules": {"tax_rules", "income_tax"},
     "option": {"black_scholes"}, "project": {"project_cash_flows"}, "perpetuity": {"perpetuity"}, "annuity": {"tvm"},
     "withdrawal": {"tvm", "loan_emi"},
     "sip_fv": {"sip_future_value", "goal_saving"}, "lump_fv": {"tvm"}, "percent": {"calculate"},
@@ -114,6 +145,12 @@ HINTS = {
     "income_tax": ("Indian salary tax: call income_tax with only the figures the user gave (per-month amounts in the *_monthly "
                    "fields), regime='both' unless they chose one. Report both regimes' totals and the lower one. If the old-regime "
                    "HRA exemption needs rent paid, basic + DA or the city, say so and ask for them; never estimate tax yourself."),
+    "capital_gains": ("Profit from selling shares or equity funds: call capital_gains with purchase_value, sale_value and "
+                      "holding_months exactly as given (ten months = 10, 2 years = 24; asset='equity_fund' for a mutual fund). "
+                      "Never use income_tax other_income for it. If the user also gives a salary, call income_tax for the salary too."),
+    "tax_rules": ("A tax rule, limit, rate or deduction question: call tax_rules (topic new_regime, old_regime, deductions or "
+                  "capital_gains; the financial year if given) and quote its figures. If the user gives their own salary, use "
+                  "income_tax instead."),
     "eac": ("Call equivalent_annual_cost once per option with purchase_cost and rate_pct, costs as positive numbers (salvage only if "
             "given). For electricity (watts, kWh) pass power_watts, hours_per_year, price_per_kwh and lifetime_hours exactly as the "
             "question gives them; otherwise pass annual_cost and life_years. Report its eac, which is negative because it is a cost, "
@@ -157,6 +194,11 @@ def detect(question: str, has_number: bool, statement: bool) -> list[str]:
     if not has_number:
         return []
     found = [kind for kind, test in ROUTES if test(question)]
+    if "capital_gains" in found and not _SALARY.search(question):     # share-profit tax alone is not salary tax
+        found = [k for k in found if k != "income_tax"]
+    if "tax_rules" in found and "income_tax" in found:                 # a rule question unless the user's own income is given
+        drop = "tax_rules" if _INCOME_FIGURE.search(question) else "income_tax"
+        found = [k for k in found if k != drop]
     for kind in list(found):
         found = [k for k in found if k not in EXCLUSIVE.get(kind, set()) or k == kind]
     if statement and "project" not in found:   # "85 percent of sales are on credit" is a statement input; the statement tools include calculate

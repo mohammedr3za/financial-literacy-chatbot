@@ -21,6 +21,8 @@ _GUARANTEE_PHRASES = re.compile(
 _RISK_WORDS = re.compile(r"(?i)\b(risks?|risky|not guaranteed|no guarantee|cannot be guaranteed|can't be guaranteed|"
                          r"volatil\w+|could lose|may lose|can lose|loss(es)?|market[- ]linked|subject to market|fluctuat\w+|uncertain)\b")
 _RISK_WORDS_INDIC = re.compile("जोखिम|नुकसान|उतार-चढ़ाव|गारंटी नहीं|ஆபத்து|அபாய|நஷ்ட|இழப்பு|ரிஸ்க்")   # Hindi, Tamil
+# tools that carry official, source-checked Indian tax rules: a regulatory answer backed by one is verified (SPEC 4.4)
+RULE_TOOLS = {"tax_rules", "income_tax", "capital_gains"}
 _CITATION = re.compile(r"\[S\d+\]")
 _REFERRAL = re.compile(r"(?i)(sebi[- ]registered|registered investment advis[eo]r|investment advis[eo]r|financial advis[eo]r|"
                        r"certified financial planner|registered advis[eo]r)")
@@ -538,7 +540,8 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
         codes.append("fake_citation")
         have = f"only [S1] to [S{num_sources}] were provided" if num_sources else "no sources were provided"
         issues.append(f"It cites {', '.join(f'[S{n}]' for n in fake)} but {have}. Remove every citation that does not match a provided source.")
-    if flags.get("regulatory_topic") and not sources_relevant and not _CANNOT_VERIFY.search(text):
+    if (flags.get("regulatory_topic") and not sources_relevant and not (RULE_TOOLS & set(tools_used))
+            and not _CANNOT_VERIFY.search(text)):
         codes.append("unverified_regulatory")
         issues.append("No official source was found for this Indian rule or tax question. Say clearly that you cannot verify the details "
                       "and that rules change, then point to the official website. Do not state specific rates or sections as facts.")

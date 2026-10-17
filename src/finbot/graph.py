@@ -568,10 +568,9 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
                                      ensure_ascii=False)
             elif capital_gain:
                 content = json.dumps({"error": "other_income must not hold profit from selling shares or mutual funds: that is "
-                                      "a capital gain, taxed at special rates outside the slabs and the 87A rebate. Pass it as "
-                                      "capital_gains_equity_stcg or capital_gains_equity_ltcg instead (the tool says how it is "
-                                      "taxed), or call again with the salary figures only and say that the gain is taxed "
-                                      "separately."}, ensure_ascii=False)
+                                      "a capital gain, taxed at special rates outside the slabs and the 87A rebate. Call "
+                                      "capital_gains for it (purchase and sale values, holding period) and income_tax with "
+                                      "the salary figures only, then report both."}, ensure_ascii=False)
             elif bad and tc["name"] == "project_cash_flows":
                 content = json.dumps({"error": f"These values are not in the question or in an earlier tool result: {', '.join(bad)}. "
                                       "Pass the figures exactly as the question gives them (sales, costs, investment, salvage, "

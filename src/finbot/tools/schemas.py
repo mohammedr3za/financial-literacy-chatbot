@@ -31,8 +31,12 @@ TOOL_DESC = {   # short tool descriptions; the per-question routing hints carry 
     "loan_emi": ("Loan payments: give exactly three of principal, annual_rate_pct, term (months, or years) and emi (the "
                  "payment per period); it solves the missing one, e.g. the APR the payments imply. payments_per_year 1, 2, "
                  "4 or 12. Leave the unknown out; never pass 0 for it."),
-    "income_tax": ("Indian income tax for a resident salaried person, new vs old regime. Pass only figures the user gave; "
-                   "per-month amounts go in the *_monthly fields."),
+    "income_tax": ("Indian income tax for a resident individual, new vs old regime. Pass only figures the user gave; "
+                   "per-month amounts go in the *_monthly fields; freelance or business income in other_income."),
+    "capital_gains": ("Tax on selling listed shares or equity mutual funds: short-term (12 months or less) 20%, long-term "
+                      "12.5% above ₹1.25 lakh, 4% cess. Figures as the user gave them."),
+    "tax_rules": ("Official Indian tax figures (slabs, standard deduction, 87A rebate, zero-tax income, 80C/80D/80CCD(1B) "
+                  "limits, capital-gains rates). Use for any rule, limit or rate question and quote them."),
     "project_cash_flows": (
         "Capital-budgeting project: yearly cash flows, OCF, after-tax salvage, NWC, NPV, IRR; or the bid price per unit "
         "that makes NPV = 0. One call per project, every figure from the question; ignore sunk costs."),
@@ -58,9 +62,12 @@ KEEP_PROP_DESC = {   # solve_financials: names explain themselves; only these ke
                            "solve_bid_price": "True: price per unit that makes NPV = 0."},
     "income_tax": {"financial_year": "'2026-27' (default) or '2025-26' (AY 2026-27).",
                    "regime": "'both' (default), or the one the user chose.",
-                   "gross_salary": "Yearly gross salary incl. HRA and allowances.",
+                   "gross_salary": "Yearly gross salary incl. HRA and allowances (0 for a freelancer).",
                    "city": "City of the rented home (metros get 50% HRA).", "age": "Only if the user gave it.",
-                   "employer_nps": "Employer NPS contribution, 80CCD(2)."},
+                   "employer_nps": "Employer NPS contribution, 80CCD(2).",
+                   "other_income": "Interest, rent, and freelance or business income (no standard deduction).",
+                   "capital_gains_equity_stcg": "Do not use: call capital_gains.",
+                   "capital_gains_equity_ltcg": "Do not use: call capital_gains."},
 }
 
 

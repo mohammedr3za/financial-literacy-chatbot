@@ -11,7 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 
 from . import calculators as C
 from . import financial_solver as F
+from . import capital_gains as CG
 from . import income_tax as T
+from . import tax_rules as TR
 from . import statements as S
 from .math_engine import calculate as _calculate
 from .math_engine import solve_equation as _solve_equation
@@ -389,12 +391,12 @@ def income_tax(financial_year: str = "2026-27", regime: Literal["both", "new", "
                section_80c: float = 0, health_insurance_self: float = 0, health_insurance_parents: float = 0,
                nps_80ccd1b: float = 0, home_loan_interest: float = 0, professional_tax: float = 0,
                employer_nps: float = 0, capital_gains_equity_stcg: float = 0, capital_gains_equity_ltcg: float = 0) -> str:
-    """Indian income tax for a resident salaried person, new vs old regime: slabs, standard deduction, 87A rebate with marginal relief, surcharge, 4% cess, HRA exemption and old-regime deductions. Pass only figures the user gave, as stated: yearly amounts in the plain fields, per-month amounts in the *_monthly fields (the tool multiplies by 12). Profit from selling shares or mutual funds is a capital gain: pass it as capital_gains_equity_stcg / capital_gains_equity_ltcg, never as other_income. Leave out anything not given; the tool lists what is missing for the old-regime HRA exemption.
+    """Indian income tax for a resident salaried person, new vs old regime: slabs, standard deduction, 87A rebate with marginal relief, surcharge, 4% cess, HRA exemption and old-regime deductions. Pass only figures the user gave, as stated: yearly amounts in the plain fields, per-month amounts in the *_monthly fields (the tool multiplies by 12). Profit from selling shares or equity mutual funds is a capital gain: call capital_gains for it, never pass it as other_income. Freelance or business income goes in other_income. Leave out anything not given; the tool lists what is missing for the old-regime HRA exemption.
 
     Args:
         financial_year: '2026-27' (current, default) or '2025-26' if the user names that year or AY 2026-27.
         regime: 'both' to compare (default), or 'new' / 'old' if the user chose one.
-        gross_salary: Yearly gross salary incl. HRA and allowances, plain rupees (30 lakh = 3000000).
+        gross_salary: Yearly gross salary incl. HRA and allowances, plain rupees (30 lakh = 3000000). Salary only: for a freelancer or business owner leave it 0 and use other_income.
         gross_salary_monthly: Monthly gross salary, if given per month instead.
         hra_received: HRA received per year.
         hra_received_monthly: HRA received per month.
@@ -404,7 +406,7 @@ def income_tax(financial_year: str = "2026-27", regime: Literal["both", "new", "
         rent_paid_monthly: Rent actually paid per month.
         city: City of the rented home, e.g. 'Mumbai' (metro cities get 50% instead of 40%).
         age: Age in years, only if the user gave it (60+ and 80+ have higher old-regime exemptions).
-        other_income: Other income taxed at slab rates per year (interest, rent), only if given; never share or mutual-fund profit.
+        other_income: Other income taxed at slab rates per year, only if given: interest, rent, and freelance, professional or business income (no standard deduction). Never share or mutual-fund profit (use capital_gains).
         section_80c: 80C investments (PF, PPF, ELSS, LIC...) per year, old regime only.
         health_insurance_self: 80D premium for self and family per year.
         health_insurance_parents: 80D premium for parents per year.
@@ -412,8 +414,8 @@ def income_tax(financial_year: str = "2026-27", regime: Literal["both", "new", "
         home_loan_interest: Interest on a self-occupied home loan per year (24(b)).
         professional_tax: Professional tax paid per year.
         employer_nps: Employer NPS contribution per year (80CCD(2)).
-        capital_gains_equity_stcg: Short-term profit from selling shares or equity funds; the tool explains it is taxed separately.
-        capital_gains_equity_ltcg: Long-term profit from selling shares or equity funds; the tool explains it is taxed separately.
+        capital_gains_equity_stcg: Do not use: call capital_gains for profit from selling shares or equity funds.
+        capital_gains_equity_ltcg: Do not use: call capital_gains for profit from selling shares or equity funds.
     """
     return _run(T.income_tax, financial_year=financial_year, regime=regime, gross_salary=gross_salary,
                 gross_salary_monthly=gross_salary_monthly, hra_received=hra_received,
@@ -425,7 +427,41 @@ def income_tax(financial_year: str = "2026-27", regime: Literal["both", "new", "
                 capital_gains_equity_stcg=capital_gains_equity_stcg, capital_gains_equity_ltcg=capital_gains_equity_ltcg)
 
 
+@tool(parse_docstring=True)
+def capital_gains(purchase_value: float = 0, sale_value: float = 0, holding_months: float = 0,
+                  asset: Literal["listed_equity", "equity_fund", "debt_fund"] = "listed_equity",
+                  financial_year: str = "2025-26", expenses: float = 0, ltcg_exemption_used: float = 0,
+                  gain: float | None = None) -> str:
+    """Capital gains tax on selling listed shares or equity mutual-fund units (India, resident): short-term (held 12 months or less) 20%; long-term 12.5% on the gain above ₹1.25 lakh a year; 4% cess; no 87A rebate. Pass the figures the user gave.
+
+    Args:
+        purchase_value: Total buying cost in rupees (2 lakh = 200000).
+        sale_value: Total sale value in rupees.
+        holding_months: How long it was held, in months (ten months = 10, 2 years = 24).
+        asset: 'listed_equity' (shares, default), 'equity_fund' (equity mutual fund or ETF) or 'debt_fund'.
+        financial_year: '2025-26' (default) or '2026-27'.
+        expenses: Brokerage and other selling costs, only if given.
+        ltcg_exemption_used: Other long-term equity gains already made this year, only if given.
+        gain: The profit, if the user gives only the gain instead of the two values.
+    """
+    return _run(CG.capital_gains, purchase_value=purchase_value, sale_value=sale_value, holding_months=holding_months,
+                asset=asset, financial_year=financial_year, expenses=expenses, ltcg_exemption_used=ltcg_exemption_used,
+                gain=gain)
+
+
+@tool(parse_docstring=True)
+def tax_rules(financial_year: str = "2026-27",
+              topic: Literal["all", "new_regime", "old_regime", "deductions", "capital_gains"] = "all") -> str:
+    """Official Indian income-tax figures: slabs, standard deduction, 87A rebate and its limit, highest zero-tax income, cess, surcharge, 80C/80D/80CCD(1B)/24(b) limits and capital-gains rates. Use it for any question about a tax rule, limit, rate or deduction and quote its figures.
+
+    Args:
+        financial_year: '2026-27' (default) or '2025-26'.
+        topic: 'new_regime', 'old_regime', 'deductions' (old-regime limits), 'capital_gains' or 'all'.
+    """
+    return _run(TR.tax_rules, financial_year=financial_year, topic=topic)
+
+
 CALC_TOOLS = [loan_emi, sip_future_value, goal_saving, tvm, real_return, effective_annual_rate, npv_irr, perpetuity,
               project_cash_flows, equivalent_annual_cost, bond_metrics, black_scholes, calculate, solve_equation, solve_financials, financial_ratios, balance_sheet_check,
-              cash_flow_statement, income_tax]
+              cash_flow_statement, income_tax, capital_gains, tax_rules]
 TOOLS_BY_NAME = {t.name: t for t in CALC_TOOLS}
