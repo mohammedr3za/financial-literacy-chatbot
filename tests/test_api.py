@@ -145,3 +145,10 @@ def test_each_answer_is_appended_to_the_markdown_log(tmp_path, monkeypatch):
     text = next(tmp_path.glob("*.md")).read_text()
     assert "₹17,356.46" in text and "`loan_emi`" in text and "turn 1" in text
     assert "ABCDE1234F" not in text            # the log keeps the redacted question the model saw
+
+
+def test_health_host_can_be_set_for_ollama_on_the_gpu_box(monkeypatch):
+    # finbot-8b-v3 runs on Ollama on the Lambda GPU: the badge must still say Lambda (cloud)
+    c = TestClient(create_app(bot_factory=lambda: None, token=TOKEN))
+    monkeypatch.setenv("FINBOT_BACKEND", "ollama"); monkeypatch.setenv("FINBOT_MODEL", "finbot-8b-v3"); monkeypatch.setenv("FINBOT_HOST", "cloud")
+    assert c.get("/api/health").json() == {"status": "ok", "host": "cloud", "model": "finbot-8b-v3"}

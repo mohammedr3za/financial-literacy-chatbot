@@ -104,7 +104,8 @@ def create_app(bot_factory=None, token: str | None = None) -> FastAPI:
     @app.get("/api/health")
     def health():
         s = get_settings()   # tells the site where the model runs: vLLM on a cloud GPU, or Ollama on this machine
-        return {"status": "ok", "host": "cloud" if s.backend == "openai" else "local", "model": s.model}
+        host = os.getenv("FINBOT_HOST") or ("cloud" if s.backend == "openai" else "local")   # Ollama on the GPU box: cloud
+        return {"status": "ok", "host": host, "model": s.model}
 
     @app.post("/api/chat")
     def chat(req: ChatRequest, request: Request, authorization: str | None = Header(default=None),
