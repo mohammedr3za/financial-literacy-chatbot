@@ -9,7 +9,7 @@ const EXAMPLES = [   // [short chip label, full question sent on click]
 ];
 const FLAGS = { guarantee_seeking: "asks for a guarantee", personal_advice_request: "asks what to buy", high_risk_topic: "high-risk topic",
   calculation_intent: "calculation", regulatory_topic: "Indian rules or tax", statement_data: "financial statement" };
-const MODEL_TAGS = { "finbot-8b-v3": "8B v3", "qwen3.6-27b": "27B v1" };
+const MODEL_TAGS = { "finbot-8b-v3": "8B v3", "qwen3.6-27b": "27B v1", "qwen3:8b": "8B base" };
 const MAX_TURNS = 25, MAX_FILE = 200_000;
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
