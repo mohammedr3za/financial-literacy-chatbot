@@ -112,8 +112,8 @@ def equivalent_annual_cost(purchase_cost: float, rate_pct: float, annual_cost: f
 
 @tool(parse_docstring=True)
 def perpetuity(cash_flow: float, rate_pct: float, growth_pct: float = 0.0, investment: float | None = None,
-               starts_in_year: int = 1) -> str:
-    """Present value of a perpetuity (cash flows forever), level or growing; with an investment also its NPV, IRR and the break-even growth rate.
+               starts_in_year: int = 1, periods: int | None = None) -> str:
+    """Present value of a perpetuity (cash flows forever), level or growing, or with periods a growing annuity over a fixed number of years; with an investment also its NPV, IRR and the break-even growth rate.
 
     Args:
         cash_flow: The first yearly cash flow, received at the end of starts_in_year, e.g. 60000.
@@ -121,9 +121,10 @@ def perpetuity(cash_flow: float, rate_pct: float, growth_pct: float = 0.0, inves
         growth_pct: Constant yearly growth of the cash flow in percent, e.g. 3. Default 0 (a level perpetuity).
         investment: Initial investment today, if the question gives one; gives NPV, IRR and the break-even growth rate.
         starts_in_year: Year of the first cash flow. Default 1 (end of the first year).
+        periods: Number of yearly cash flows for a growing annuity (e.g. 25); leave out for a perpetuity.
     """
     return _run(C.perpetuity, cash_flow=cash_flow, rate_pct=rate_pct, growth_pct=growth_pct, investment=investment,
-                starts_in_year=starts_in_year)
+                starts_in_year=starts_in_year, periods=periods)
 
 
 _PER_YEAR = float | list[float] | None

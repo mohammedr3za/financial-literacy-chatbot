@@ -80,6 +80,11 @@ ROUTES = [  # (type, test) in priority order
     ("cagr", lambda q: bool(re.search(r"\bcagr\b|compound(ed)? annual growth|annuali[sz]ed return", q, I))),
     ("income_tax", lambda q: bool(_TAX_ASK.search(q) and _TAX_CTX.search(q))),
     ("capital_gains", _capital_gains),
+    ("simple_interest", lambda q: bool(re.search(r"\bsimple interest\b|\bflat (interest|rate)\b|साधारण ब्याज", q, I))),
+    ("sinking_fund", lambda q: bool(re.search(r"\bsinking fund\b", q, I))),
+    ("ppf", lambda q: bool(re.search(r"\bppf\b|public provident fund", q, I))),
+    ("growing_annuity", lambda q: bool(re.search(r"\bgrow\w*\b[^.?]{0,40}\d+(\.\d+)?\s*%[^.?]{0,60}\bfor\s+\d+\s+(years|periods|payments)\b", q, I)
+                                       and not _PERPETUITY.search(q))),
     ("tax_rules", _tax_rule),
     ("eac", lambda q: bool(re.search(r"equivalent annual (cost|annuity)|\beac\b|\beaa\b", q, I))),
     ("project", lambda q: bool(_PROJECT_ITEMS.search(q) and re.search(r"\btax", q, I) and _PROJECT_ASK.search(q))),
@@ -104,7 +109,11 @@ EXCLUSIVE = {"goal_saving": {"sip_fv", "lump_fv", "present_value"}, "present_val
              "annuity": {"lump_fv", "present_value", "sip_fv", "goal_saving", "years"},
              "eac": {"annuity"}, "withdrawal": {"goal_saving", "present_value"},
              "sip_fv": {"lump_fv"},
-             "capital_gains": {"percent", "lump_fv", "cagr", "years", "tax_rules"}}
+             "capital_gains": {"percent", "lump_fv", "cagr", "years", "tax_rules"},
+             "simple_interest": {"lump_fv", "percent", "years", "loan", "emi"},
+             "sinking_fund": {"goal_saving", "present_value", "lump_fv", "annuity", "sip_fv"},
+             "ppf": {"lump_fv", "sip_fv", "goal_saving", "annuity", "years"},
+             "growing_annuity": {"annuity", "present_value", "lump_fv", "years", "perpetuity"}}
 
 REQUIRED_TOOLS = {
     "goal_saving": {"goal_saving"}, "present_value": {"tvm", "goal_saving"}, "years": {"tvm"},
@@ -112,9 +121,11 @@ REQUIRED_TOOLS = {
     "loan_rate": {"loan_emi"},
     "cagr": {"tvm"}, "npv_irr": {"npv_irr"}, "eac": {"equivalent_annual_cost", "npv_irr"}, "income_tax": {"income_tax"}, "bond": {"bond_metrics", "calculate"},
     "capital_gains": {"capital_gains"}, "tax_rules": {"tax_rules", "income_tax"},
+    "simple_interest": {"calculate"}, "sinking_fund": {"tvm", "goal_saving"}, "ppf": {"tvm"},
+    "growing_annuity": {"perpetuity", "calculate"},
     "option": {"black_scholes"}, "project": {"project_cash_flows"}, "perpetuity": {"perpetuity", "calculate"}, "annuity": {"tvm"},
     "withdrawal": {"tvm", "loan_emi"},
-    "sip_fv": {"sip_future_value", "goal_saving"}, "lump_fv": {"tvm"}, "percent": {"calculate"},
+    "sip_fv": {"sip_future_value"}, "lump_fv": {"tvm"}, "percent": {"calculate"},
     "statement": {"solve_financials", "financial_ratios", "balance_sheet_check", "cash_flow_statement", "calculate", "solve_equation"},
 }
 
@@ -148,6 +159,14 @@ HINTS = {
     "capital_gains": ("Profit from selling shares or equity funds: call capital_gains with purchase_value, sale_value and "
                       "holding_months exactly as given (ten months = 10, 2 years = 24; asset='equity_fund' for a mutual fund). "
                       "Never use income_tax other_income for it. If the user also gives a salary, call income_tax for the salary too."),
+    "simple_interest": ("Simple interest: call calculate with I = P × R × T ÷ 100 (T in years: months ÷ 12, days ÷ 365); the "
+                        "amount is P + I. For a missing P, R or T rearrange the same formula inside calculate."),
+    "sinking_fund": ("Sinking fund: call tvm(solve_for='pmt', fv=<amount needed>, annual_rate_pct=..., years=..., "
+                     "periods_per_year=<deposits per year>), with when='begin' only if deposits are at the start."),
+    "ppf": ("PPF: deposits at the start of each financial year, compounded yearly. Call tvm(solve_for='fv', pmt=<yearly "
+            "deposit>, annual_rate_pct=<rate, e.g. 7.1>, years=<15 or as given>, when='begin')."),
+    "growing_annuity": ("Growing annuity (payments growing for a fixed number of years): call perpetuity(cash_flow=<first "
+                        "payment>, rate_pct=..., growth_pct=..., periods=<number of payments>)."),
     "tax_rules": ("A tax rule, limit, rate or deduction question: call tax_rules (topic new_regime, old_regime, deductions or "
                   "capital_gains; the financial year if given) and quote its figures. If the user gives their own salary, use "
                   "income_tax instead."),

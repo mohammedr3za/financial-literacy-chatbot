@@ -1,5 +1,6 @@
 """LangGraph: START -> precheck -> retrieve -> agent <-> tools -> review -> END (SPEC section 3)."""
 import json
+import difflib
 import re
 import time
 from typing import Annotated, Any, TypedDict
@@ -246,6 +247,36 @@ def fabricated_figures(answer: str, question: str, evidence: str, tools_used: li
 
 
 MIN_PRUNED_CHARS = 200
+ARG_ALIASES = {"target_amount": "target", "goal": "target", "goal_amount": "target", "loan_amount": "principal",
+               "monthly_investment": "monthly", "monthly_sip": "monthly", "number_of_years": "years", "tenure_years": "years"}
+_RATE_LIKE = re.compile(r"(?i)^(annual_)?(interest_)?(rate|return)(_pct|_percent)?$|^(interest|discount)_rate(_pct)?$")
+
+
+def normalize_args(tool: str, args: dict) -> tuple[dict, str | None]:
+    """Tools built from a plain function drop unknown argument names silently (v3 lost the rate in 44 tvm calls).
+    Map common aliases and a lone rate-like name onto the tool's one rate field; reject any other unknown name with a
+    suggestion. Tools with a strict schema already reject unknown names and are left alone (SPEC changelog 2026-10-17)."""
+    t = TOOLS_BY_NAME.get(tool)
+    if t is None or not isinstance(args, dict) or t.args_schema.model_config.get("extra") == "forbid":
+        return args, None
+    fields = set(t.args)
+    rate_fields = [f for f in fields if re.search(r"(rate|return)_pct$", f)]
+    out, unknown = {}, []
+    for k, v in args.items():
+        target = k if k in fields else ARG_ALIASES.get(k.lower())
+        if target is None and _RATE_LIKE.search(k) and len(rate_fields) == 1:
+            target = rate_fields[0]
+        if target in fields and target not in out and (target == k or target not in args):
+            out[target] = v
+        else:
+            unknown.append(k)
+    if unknown:
+        tips = [f"{k} (did you mean {m[0]}?)" if (m := difflib.get_close_matches(k, sorted(fields), n=1, cutoff=0.5)) else k
+                for k in unknown]
+        return out, f"Unknown argument(s) for {tool}: {', '.join(tips)}. Valid arguments: {', '.join(sorted(fields))}."
+    return out, None
+
+
 _MENTIONS_INTEREST = re.compile(r"(?i)\binterest\b(?!\s+rates?\b)")   # an interest line, not an interest rate
 FORCE_TOOL_CODES = {"no_tool_for_numbers", "wrong_tool"}   # reviewer codes whose revision must call a tool (vLLM)
 
@@ -555,13 +586,16 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         out = []
         style = MONEY_STYLE.set(state.get("flags", {}).get("currency", "INR"))   # $ questions get $ formatting
         for tc in state["messages"][-1].tool_calls:
-            tc = {**tc, "args": deposit_timing(tc["name"], tc["args"], state.get("flags", {}), user_text)}
+            fixed, arg_error = normalize_args(tc["name"], tc["args"])
+            tc = {**tc, "args": deposit_timing(tc["name"], fixed, state.get("flags", {}), user_text)}
             bad = (ungrounded_values(tc["args"], user_text, tc["name"], "\n".join(results))
                    if tc["name"] in GROUNDED_TOOLS else [])
             zero_rates = invented_zero_rates(tc["name"], tc["args"], user_text)
             capital_gain = tc["name"] == "income_tax" and stock_profit_as_other_income(tc["args"], user_text)
             in_cents = cents_as_dollars(tc["name"], tc["args"], user_text)
-            if in_cents:
+            if arg_error:
+                content = json.dumps({"error": arg_error}, ensure_ascii=False)
+            elif in_cents:
                 content = json.dumps({"error": f"The question gives this cost in cents ({in_cents[0]:g} cents), but "
                                       f"variable_cost_per_unit is in dollars. Pass variable_cost_cents_per_unit={in_cents[0]:g} "
                                       "instead and leave variable_cost_per_unit out; the tool converts cents to dollars."},

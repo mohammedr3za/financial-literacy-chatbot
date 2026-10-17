@@ -681,15 +681,27 @@ def effective_annual_rate(nominal_pct: float, periods_per_year: int) -> dict:
 
 # ---------------------------------------------------------------- perpetuity (SPEC 4)
 def perpetuity(cash_flow: float, rate_pct: float, growth_pct: float = 0.0, investment: float | None = None,
-               starts_in_year: int = 1) -> dict:
-    """Level or growing perpetuity whose first cash flow comes at the end of year starts_in_year."""
+               starts_in_year: int = 1, periods: int | None = None) -> dict:
+    """Level or growing perpetuity whose first cash flow comes at the end of year starts_in_year; with periods = n, a
+    growing annuity of n yearly cash flows: PV = C ÷ (r − g) × [1 − ((1+g)/(1+r))^n], or n·C ÷ (1+r) when r = g."""
     _require(cash_flow > 0, "cash_flow (the first yearly cash flow) must be positive.")
-    _require(rate_pct > growth_pct, "rate_pct must be greater than growth_pct, or the perpetuity has no finite value.")
+    if periods is None:
+        _require(rate_pct > growth_pct, "rate_pct must be greater than growth_pct, or the perpetuity has no finite value "
+                                        "(for a fixed number of years pass periods).")
+    else:
+        _require(int(periods) == periods and periods >= 1, "periods must be a whole number of years of 1 or more.")
     _require(int(starts_in_year) == starts_in_year and starts_in_year >= 1, "starts_in_year must be a whole number of 1 or more.")
     r, g, t = rate_pct / 100, growth_pct / 100, int(starts_in_year)
-    value_before_first = cash_flow / (r - g)
+    if periods is None:
+        value_before_first = cash_flow / (r - g)
+        working = [f"Value one year before the first cash flow = C ÷ (r − g) = {cash_flow:,.2f} ÷ ({r:g} − {g:g}) = {value_before_first:,.2f}"]
+    else:
+        n = int(periods)
+        value_before_first = (n * cash_flow / (1 + r) if abs(r - g) < 1e-12
+                              else cash_flow / (r - g) * (1 - ((1 + g) / (1 + r)) ** n))
+        working = [f"Growing annuity, {n} cash flows: PV = C ÷ (r − g) × [1 − ((1+g)/(1+r))^n] = {cash_flow:,.2f} ÷ "
+                   f"({r:g} − {g:g}) × [1 − ({1 + g:g}/{1 + r:g})^{n}] = {value_before_first:,.2f}"]
     pv = value_before_first / (1 + r) ** (t - 1)
-    working = [f"Value one year before the first cash flow = C ÷ (r − g) = {cash_flow:,.2f} ÷ ({r:g} − {g:g}) = {value_before_first:,.2f}"]
     if t > 1:
         working.append(f"PV today = {value_before_first:,.2f} ÷ (1 + {r:g})^{t - 1} = {pv:,.2f}")
     result = {"pv": round(pv, 2), "value_one_year_before_first_flow": round(value_before_first, 2)}
@@ -702,7 +714,7 @@ def perpetuity(cash_flow: float, rate_pct: float, growth_pct: float = 0.0, inves
         working.append(f"NPV = PV − investment = {pv:,.2f} − {investment:,.2f} = {pv - investment:,.2f}")
         working.append(f"Break-even growth g* = r − C ÷ (I·(1+r)^{t - 1}) = {g_star * 100:.4f}%")
     out = _out({"cash_flow": cash_flow, "rate_pct": rate_pct, "growth_pct": growth_pct, "investment": investment,
-                "starts_in_year": t},
+                "starts_in_year": t, "periods": periods},
                "PV = C ÷ (r − g), discounted (starts_in_year − 1) years ; NPV = PV − investment ; IRR = C ÷ I + g ; "
                "break-even growth g* = r − C ÷ I (first flow in year 1)", result,
                tuple(k for k in ("pv", "npv") if k in result))
