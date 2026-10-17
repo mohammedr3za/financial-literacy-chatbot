@@ -80,6 +80,12 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - [x] Unsloth LoRA, GGUF export, `ollama create finbot-8b-v2` (Qwen3-8B base; the 9B was dropped in M0)
 - **Acceptance:** `rag` vs `rag_ft` compared on calculation accuracy and the rubric sample; the winner ships; both are recorded.
 
+## M8 — Fine-tune v4 (from the v3 evaluation)
+- [ ] FinBot code fixes: unknown tool arguments rejected, with aliases; routes for simple interest, sinking fund, PPF and SIP; KB sources for SCSS, SEBI's F&O study and 1930
+- [ ] v4 data: new-tool, weak-family and Indian-language questions (27B teacher, fixed code, no test-set items)
+- [ ] Train v4 (v3 recipe and format), test it on the same sets
+- **Acceptance:** v4 reaches at least 85% on the test bank and on CA, at least 24/34 McGraw problems and at least 7/10 Indian-language questions, with no loss on concept, safety or held-out. Plan: `docs/finetune_v4_plan.md`.
+
 ## M7 — Booth hardening (Sun PM)
 - [ ] Offline test, backup screen recording, README
 - **Acceptance:** a cold start to the first answer takes 2 minutes or less.
@@ -213,3 +219,4 @@ Caution: any fix must be checked on *new* problems, not these 30, or the score m
   - McGraw: 32/34 problems (170/184 parts) against 26/34 (125/184);
   - held-out: 20/20 against 17/20;
   - question bank: 0 blank fallbacks against 4.
+- 2026-10-17 v3 evaluation (A10, production code): test bank 113/159 (71%), CA 72/97 (74%), McGraw 17/34 (98/184 parts); concept 27/27, safety 15/16, Indian languages 3/10. The 27B on the same sets: 151/159, 92/97, 32/34. Failure causes are in docs/finetune_v4_plan.md. All Lambda GPUs were terminated at the user's request after the results and chat logs were copied to results/lambda_a10 and results/lambda_a100.
