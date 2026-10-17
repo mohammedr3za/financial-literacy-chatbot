@@ -126,3 +126,26 @@ def test_request_for_inputs_on_a_calculation_route_keeps_its_text_without_unveri
     text = t["answer_text"]
     assert "could not compute" not in text and "2,437" not in t["answer"]
     assert "Please share the cash flows, the rate and the number of years" in text
+
+
+# ---------- solve_financials: no interest line means EBT = EBIT (stated), unless the question mentions interest
+def test_solver_takes_missing_interest_as_zero_and_says_so():
+    from finbot.tools.financial_solver import solve_financials
+    out = solve_financials(targets=["net_income"], sales=500_000, costs=300_000, depreciation=50_000, tax_rate_pct=25)
+    assert out["result"]["net_income"] == 112_500 and "missing" not in out
+    assert any("interest" in a for a in out["assumptions"])
+    given = solve_financials(targets=["net_income"], sales=500_000, costs=300_000, depreciation=50_000, interest=10_000,
+                             tax_rate_pct=25)
+    assert given["result"]["net_income"] == 105_000 and "assumptions" not in given
+
+
+def test_graph_refuses_the_no_interest_assumption_when_the_question_mentions_interest():
+    args = {"targets": ["net_income"], "sales": 500000, "costs": 300000, "depreciation": 50000, "tax_rate_pct": 25}
+    q = ("Sales are $500,000, costs $300,000, depreciation $50,000 and interest paid $10,000. The tax rate is 25 percent. "
+         "What is net income?")
+    fb, _ = bot(tool_call("solve_financials", args, "c1"), tool_call("solve_financials", {**args, "interest": 10000}, "c2"),
+                "Net income is $105,000.")
+    t = fb.ask(q, thread_id="interest")
+    first = t["tools"][0]["output"]
+    assert "error" in first and "interest" in first["error"]
+    assert t["tools"][1]["output"]["result"]["net_income"] == 105_000

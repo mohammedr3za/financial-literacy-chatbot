@@ -370,6 +370,9 @@ def check_names(names, what: str = "item") -> None:
 
 
 # ---------------------------------------------------------------- solver
+NO_INTEREST = "No interest expense was given, so interest is taken as 0 and EBT = EBIT."
+
+
 def solve_financials(targets: list[str], **given) -> dict:
     """Derive the targets from the given figures through the identity library. Raises ValueError on bad names."""
     if isinstance(targets, str):
@@ -389,24 +392,33 @@ def solve_financials(targets: list[str], **given) -> dict:
     known = {k: _rational(v) for k, v in inputs.items()}
     active = _active(credit=bool(_CREDIT_NAMES & (set(inputs) | set(targets))))
     derived: list[tuple[str, int, str]] = []                          # (item, identity index, formula text)
-    progress = True
-    while progress:
-        progress = False
-        for idx in active:
-            names = _VARS[idx]
-            unknown = [n for n in names if n not in known]
-            if len(unknown) != 1:
-                continue
-            solved = _solved(idx, unknown[0])
-            if solved is None:
-                continue
-            val = _evaluate(solved[0], known)
-            if val is None:
-                continue
-            known[unknown[0]] = val
-            derived.append((unknown[0], idx, solved[1]))
-            progress = True
-            break
+
+    def derive():
+        progress = True
+        while progress:
+            progress = False
+            for idx in active:
+                names = _VARS[idx]
+                unknown = [n for n in names if n not in known]
+                if len(unknown) != 1:
+                    continue
+                solved = _solved(idx, unknown[0])
+                if solved is None:
+                    continue
+                val = _evaluate(solved[0], known)
+                if val is None:
+                    continue
+                known[unknown[0]] = val
+                derived.append((unknown[0], idx, solved[1]))
+                progress = True
+                break
+
+    derive()
+    assumptions = []
+    if any(t not in known for t in targets) and "ebit" in known and "ebt" not in known and "interest" not in known:
+        known["interest"] = _rational(0)        # an income statement with no interest line: EBT = EBIT (SPEC 4.1)
+        assumptions.append(NO_INTEREST)
+        derive()
 
     values = {k: float(v) for k, v in known.items()}
     used = {var: idx for var, idx, _ in derived}
@@ -454,6 +466,8 @@ def solve_financials(targets: list[str], **given) -> dict:
         out["warnings"] = warnings[:5]
     if zeros:
         out["ignored_zero_inputs"] = zeros
+    if assumptions:
+        out["assumptions"] = assumptions
     out["table"] = _table(inputs, steps, targets, values, warnings)
     return out
 

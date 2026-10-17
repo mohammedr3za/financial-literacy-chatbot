@@ -16,6 +16,7 @@ from .review import (FOOTER, _strip_math_markup, asks_for_inputs, cut_hypothetic
                      reviewer_note, unsupported_figures)
 from .tables import to_markdown
 from .tools.financial_solver import KIND as SOLVER_KIND
+from .tools.financial_solver import NO_INTEREST
 from .tools.financial_solver import resolve as solver_name
 from .tools.fmt import MONEY_STYLE
 from .tools.registry import CALC_TOOLS, TOOLS_BY_NAME
@@ -244,6 +245,7 @@ def fabricated_figures(answer: str, question: str, evidence: str, tools_used: li
 
 
 MIN_PRUNED_CHARS = 200
+_MENTIONS_INTEREST = re.compile(r"(?i)\binterest\b(?!\s+rates?\b)")   # an interest line, not an interest rate
 FORCE_TOOL_CODES = {"no_tool_for_numbers", "wrong_tool"}   # reviewer codes whose revision must call a tool (vLLM)
 
 
@@ -584,6 +586,9 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
                     content = TOOLS_BY_NAME[tc["name"]].invoke(tc["args"])
                 except Exception as exc:  # invalid arguments: tell the model so it can retry
                     content = json.dumps({"error": _argument_error(tc["name"], exc)}, ensure_ascii=False)
+                if tc["name"] == "solve_financials" and NO_INTEREST in str(content) and _MENTIONS_INTEREST.search(user_text):
+                    content = json.dumps({"error": "The question mentions interest, so it cannot be taken as 0: pass the "
+                                          "interest expense as interest=<amount> and call solve_financials again."})
             out.append(ToolMessage(content=content, tool_call_id=tc["id"], name=tc["name"]))
             if not _is_error(content):
                 results.append(str(content))
