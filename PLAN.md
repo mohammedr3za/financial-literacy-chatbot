@@ -75,9 +75,9 @@ Work on the **first milestone that still has unchecked boxes**. Tick a box only 
 - **Acceptance:** the full grid runs for `base` and `rag`, and the blind score sheet is generated.
 
 ## M6 — Fine-tune (Sun, rented GPU, optional)
-- [ ] GPU rented (user action) and SSH access shared
-- [ ] Teacher served by vLLM; `make_dataset.py` produces filtered transcripts
-- [ ] Unsloth LoRA, GGUF export, `ollama create finbot-9b`
+- [x] GPU rented (user action) and SSH access shared (Lambda A100 40 GB: finbot-serve + finbot-train-v2)
+- [x] Teacher served by vLLM; `make_dataset.py` produces filtered transcripts (Qwen3.6-27B teacher, 1,414 examples after fact-check, cleaning and decontamination)
+- [x] Unsloth LoRA, GGUF export, `ollama create finbot-8b-v2` (Qwen3-8B base; the 9B was dropped in M0)
 - **Acceptance:** `rag` vs `rag_ft` compared on calculation accuracy and the rubric sample; the winner ships; both are recorded.
 
 ## M7 — Booth hardening (Sun PM)
@@ -201,3 +201,15 @@ Caution: any fix must be checked on *new* problems, not these 30, or the score m
   - a follow-up of a follow-up was not routed and invented a figure.
   - Before the fixes, 2 problems hit HTTP 400; now 0 do.
 - First drafts still often skip the tool (6 of 18). The reviewer note fixes them, at the cost of one revision (10–40 s).
+- 2026-10-17 M6 fine-tune v2: Qwen3-8B LoRA r32/a32, lr 1e-4, 2 epochs, 1,340 train / 73 eval examples, compact tool schemas, 168 steps on an A100.
+  - Eval loss went from 0.682 to 0.455 (best at the last step). Q5_K_M GGUF sha256 ea340d67… verified on the Mac; the training A100 was terminated 08:19 IST.
+  - Serving fix needed: `FINBOT_THINKING=auto` and `FINBOT_COMPACT_TOOLS=on`. With `think=false`, v2 never called a tool (see the SPEC changelog).
+  - Side by side on the same A100 Ollama with the same code (commit f39c6d4), v2 against base qwen3:8b:
+    - held-out: 20/20 against 18/20;
+    - McGraw: 8/34 problems fully correct (10/184 parts) against 14/34 (79/184). v2 skipped the tool on 15/34 and fell back on 20/34;
+    - team question bank: numeric 7/11 against 7/11; review passed 62/83 against 74/83.
+  - **Winner: base qwen3:8b, which stays on finbot-local.** v2 is better on simple Indian calculations but much worse on textbook statement and NPV problems, which the training data barely covered after decontamination. Both results are recorded here; v2 stays registered on the Mac as `finbot-8b-v2`, but it is not served.
+- 2026-10-17 overnight, 27B (finbot-blond) on the latest code against the night baseline:
+  - McGraw: 32/34 problems (170/184 parts) against 26/34 (125/184);
+  - held-out: 20/20 against 17/20;
+  - question bank: 0 blank fallbacks against 4.
