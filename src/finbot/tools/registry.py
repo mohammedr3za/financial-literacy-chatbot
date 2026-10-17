@@ -330,10 +330,15 @@ class CashFlowArgs(_Strict):
         'or [opening, closing], e.g. {"Debtors": [40000, 55000], "Stock": -8000}.'))
     current_liability_changes: _WC | None = Field(None, description=(
         'Current liabilities such as creditors, outstanding expenses: the change or [opening, closing], e.g. {"Creditors": 6000}.'))
-    investing: dict[str, float] | None = Field(None, description=(
-        'Investing cash flows: purchases negative, sale proceeds positive, e.g. {"Purchase of machinery": -60000, "Sale of furniture": 5000}.'))
-    financing: dict[str, float] | None = Field(None, description=(
-        'Financing cash flows: loans and share issues positive, repayments and dividends negative, e.g. {"Bank loan": 25000, "Dividend paid": -20000}.'))
+    investing: _WC | None = Field(None, description=(
+        'Investing cash flows (purchases negative, sale proceeds positive) or an asset\'s [opening, closing] balances, e.g. '
+        '{"Purchase of machinery": -60000, "Sale of furniture": 5000, "Long-term investments": [20000, 26000]}.'))
+    financing: _WC | None = Field(None, description=(
+        'Financing cash flows (loans, share issues +; repayments, dividends -) or [opening, closing] debt or share-capital '
+        'balances, e.g. {"Dividend paid": -20000, "Long-term debt": [50000, 70000], "Common stock": [100000, 110000]}.'))
+    net_fixed_assets: list[float] | None = Field(None, min_length=2, max_length=2, description=(
+        "[opening, closing] net fixed assets; the tool adds capital spending (closing - opening + depreciation), so do not "
+        "also list it under investing."))
     opening_cash: float | None = Field(None, description="Cash at the start of the year.")
     closing_cash: float | None = Field(None, description="Cash at the end of the year, if given, to check the statement reconciles.")
 

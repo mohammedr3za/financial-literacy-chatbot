@@ -3,6 +3,8 @@
 Amounts are in whatever unit the user gives (₹, ₹ lakh, ₹ crore); results use the same unit.
 Every function returns {"inputs", "formula", "result", "formatted", "table"} and raises ValueError on bad input.
 """
+import re
+
 from .fmt import group, make_table
 
 _NUM_FIELDS = ("current_assets", "current_liabilities", "inventory", "cash", "receivables", "payables", "total_assets",
@@ -148,6 +150,9 @@ def balance_sheet_check(assets: dict, liabilities: dict, equity: dict) -> dict:
             "result": result, "formatted": {}, "table": table}
 
 
+_NET_FIXED = re.compile(r"(?i)\bnet\b.*\b(fixed assets?|plant|pp&?e|property)\b")
+
+
 def _change(name: str, v) -> float:
     """A working-capital entry is either the change (a number) or [opening, closing]."""
     if isinstance(v, (int, float)):
@@ -160,7 +165,20 @@ def _change(name: str, v) -> float:
 def cash_flow_statement(net_income: float, depreciation: float = 0.0, other_non_cash: dict | None = None,
                         current_asset_changes: dict | None = None, current_liability_changes: dict | None = None,
                         investing: dict | None = None, financing: dict | None = None,
-                        opening_cash: float | None = None, closing_cash: float | None = None) -> dict:
+                        opening_cash: float | None = None, closing_cash: float | None = None,
+                        net_fixed_assets: list | None = None) -> dict:
+    """Investing and financing items are cash flows, or [opening, closing] balances: an asset's increase is an outflow,
+    a debt or share-capital increase an inflow. net_fixed_assets [opening, closing] gives net capital spending =
+    closing - opening + depreciation (SPEC 4.1)."""
+    investing = dict(investing or {})
+    net_named = next((k for k, v in investing.items() if isinstance(v, (list, tuple)) and _NET_FIXED.search(k)), None)
+    if net_fixed_assets is None and net_named:   # "Net fixed assets": [o, c] under investing is net of depreciation too
+        net_fixed_assets = investing.pop(net_named)
+    investing = {k: (-_change(k, v) if isinstance(v, (list, tuple)) else v) for k, v in investing.items()}
+    if net_fixed_assets is not None:
+        capex = _change("net_fixed_assets", net_fixed_assets) + float(depreciation)
+        investing = {"Purchase of fixed assets (net capital spending)": -capex, **investing}
+    financing = {k: (_change(k, v) if isinstance(v, (list, tuple)) else v) for k, v in (financing or {}).items()}
     rows, bold = [["Operating activities", "Net income", group(net_income)]], []
     cfo = float(net_income)
     adds = ({"Depreciation": depreciation} if depreciation else {}) | dict(other_non_cash or {})

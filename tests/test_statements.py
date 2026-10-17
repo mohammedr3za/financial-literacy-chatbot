@@ -113,3 +113,37 @@ def test_given_sections_are_still_checked_not_derived():
     assert not r["balanced"] and r["difference"] == 10 and "derived" not in r
     both_missing = balance_sheet_check(assets={"Cash": 100}, liabilities={}, equity={})["result"]
     assert not both_missing["balanced"] and "derived" not in both_missing
+
+
+# investing and financing balances as [opening, closing] (2026-10-17: a live run passed pairs and got "must be a number")
+def test_cash_flow_takes_balance_pairs_for_investing_and_financing():
+    out = cash_flow_statement(
+        net_income=40_000, depreciation=15_000,
+        investing={"Long-term investments": [10_000, 16_000], "Sale of land": 9_000},
+        financing={"Long-term debt": [50_000, 70_000], "Notes payable": [12_000, 9_000], "Dividends paid": -8_000},
+        net_fixed_assets=[100_000, 130_000])
+    r = out["result"]
+    assert r["cfi"] == -(130_000 - 100_000 + 15_000) - 6_000 + 9_000          # capex 45,000; investments up 6,000
+    assert r["cff"] == 20_000 - 3_000 - 8_000
+    assert r["cfo"] == 55_000 and r["net_change"] == r["cfo"] + r["cfi"] + r["cff"]
+    items = [row[1] for row in out["table"]["rows"]]
+    assert "Purchase of fixed assets (net capital spending)" in items
+
+
+def test_cash_flow_registry_accepts_balance_pairs():
+    import json
+    from finbot.tools.registry import TOOLS_BY_NAME
+    out = json.loads(TOOLS_BY_NAME["cash_flow_statement"].invoke({
+        "net_income": 40_000, "depreciation": 15_000, "net_fixed_assets": [100_000, 130_000],
+        "financing": {"Long-term debt": [50_000, 70_000]}, "investing": {"Long-term investments": [10_000, 16_000]}}))
+    assert "error" not in out and out["result"]["cfi"] == -51_000 and out["result"]["cff"] == 20_000
+
+
+def test_a_net_fixed_asset_pair_under_investing_gets_the_depreciation_added_back():
+    # a live run passed {"Net fixed assets": [opening, closing]} under investing; the statement missed by the depreciation
+    for name in ("Net fixed assets", "Net plant and equipment", "Net PP&E", "Net property, plant and equipment"):
+        out = cash_flow_statement(net_income=40_000, depreciation=15_000, investing={name: [100_000, 130_000]},
+                                  opening_cash=10_000, closing_cash=20_000)
+        assert out["result"]["cfi"] == -45_000 and out["result"]["reconciles"] is True, name
+    gross = cash_flow_statement(net_income=0, investing={"Long-term investments": [100_000, 130_000]})
+    assert gross["result"]["cfi"] == -30_000
