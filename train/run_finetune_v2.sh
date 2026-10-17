@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fine-tune v2 on a fresh Lambda A100, from the Mac:  train/run_finetune_v2.sh <ip> setup|train|fetch
+# Fine-tune on a fresh Lambda A100, from the Mac:  [V=v3] train/run_finetune_v2.sh <ip> setup|train|fetch
 #   setup : install uv + an Unsloth training env on the box (about 5-10 min)
 #   train : upload finetune.py + train/data/sft_v2_final.jsonl and start training DETACHED (nohup; survives ssh drops)
 #   fetch : download the GGUFs (Q5_K_M, Q4_K_M), LoRA and log, and register finbot-8b-v2 with Ollama (Q5_K_M)
@@ -7,6 +7,8 @@
 set -euo pipefail
 IP=${1:?usage: train/run_finetune_v2.sh <ip> setup|train|fetch}
 STEP=${2:?setup|train|fetch}
+V=${V:-v2}                                   # V=v3: out_v3, train_v3.log, finbot-8b-v3
+DATA=${DATA:-train/data/sft_${V}_final.jsonl}
 cd "$(dirname "$0")/.."
 SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 ubuntu@$IP"
 case "$STEP" in
@@ -29,25 +31,27 @@ mkdir -p ~/finbot-train
 REMOTE
   ;;
 train)
-  [ -s train/data/sft_v2_final.jsonl ] || { echo "train/data/sft_v2_final.jsonl missing: run prepare_sft first"; exit 1; }
-  rsync -az train/finetune.py train/data/sft_v2_final.jsonl "ubuntu@$IP:~/finbot-train/"
-  $SSH 'cd ~/finbot-train && cat > run_v2.sh <<EOS
+  [ -s "$DATA" ] || { echo "$DATA missing: run prepare_sft first"; exit 1; }
+  RUN=$(mktemp)
+  cat > "$RUN" <<EOS
 #!/usr/bin/env bash
 export HF_HUB_ENABLE_HF_TRANSFER=1 LD_LIBRARY_PATH=/usr/local/cuda-13.0/compat:\${LD_LIBRARY_PATH:-}
 cd ~/finbot-train
-~/train-env/bin/python finetune.py --base Qwen/Qwen3-8B --data sft_v2_final.jsonl --out out_v2
+~/train-env/bin/python finetune.py --base Qwen/Qwen3-8B --data $(basename "$DATA") --out out_$V
 echo EXITED \$?
 EOS
-chmod +x run_v2.sh && { nohup ./run_v2.sh > train_v2.log 2>&1 < /dev/null & } && echo started'   # & on nohup only, or ssh waits for training
+  rsync -az train/finetune.py train/sft_format.py "$DATA" "ubuntu@$IP:~/finbot-train/"
+  rsync -az "$RUN" "ubuntu@$IP:~/finbot-train/run_$V.sh" && rm -f "$RUN"
+  $SSH "cd ~/finbot-train && chmod +x run_$V.sh && { nohup ./run_$V.sh > train_$V.log 2>&1 < /dev/null & } && echo started"
   ;;
 fetch)
-  mkdir -p train/out_v2
+  mkdir -p train/out_$V
   rsync -az --partial --include "*Q5_K_M*.gguf" --include "lora/***" --include "*/" --exclude "*" \
-        "ubuntu@$IP:~/finbot-train/out_v2/" train/out_v2/
-  rsync -az "ubuntu@$IP:~/finbot-train/train_v2.log" train/out_v2/
-  GGUF=$(find train/out_v2 -name "*Q5_K_M*.gguf" | head -1)
-  [ -n "$GGUF" ] || { echo "No Q5_K_M GGUF found; check train_v2.log"; exit 1; }
-  ollama show qwen3:8b --modelfile | sed "s|^FROM .*|FROM $PWD/$GGUF|" > train/out_v2/Modelfile
-  ollama create finbot-8b-v2 -f train/out_v2/Modelfile && echo "registered finbot-8b-v2"
+        "ubuntu@$IP:~/finbot-train/out_$V/" train/out_$V/
+  rsync -az "ubuntu@$IP:~/finbot-train/train_$V.log" train/out_$V/
+  GGUF=$(find train/out_$V -name "*Q5_K_M*.gguf" | head -1)
+  [ -n "$GGUF" ] || { echo "No Q5_K_M GGUF found; check train_$V.log"; exit 1; }
+  ollama show qwen3:8b --modelfile | sed "s|^FROM .*|FROM $PWD/$GGUF|" > train/out_$V/Modelfile
+  ollama create finbot-8b-$V -f train/out_$V/Modelfile && echo "registered finbot-8b-$V"
   ;;
 esac

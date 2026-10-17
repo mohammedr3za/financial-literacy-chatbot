@@ -24,6 +24,8 @@ from trl import SFTConfig, SFTTrainer
 from unsloth import FastLanguageModel
 from unsloth.chat_templates import train_on_responses_only
 
+from sft_format import mark_no_think, uniform_think
+
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -51,10 +53,12 @@ def main() -> None:
 
     rows = [json.loads(line) for line in open(a.data, encoding="utf-8")]
     random.Random(3407).shuffle(rows)
-    # enable_thinking=False matches how FinBot serves the model (Ollama with thinking off)
+    # rendered as Ollama serves FinBot with think=false: " /no_think" on the question and the empty think block before
+    # every assistant turn after it (v2 learned "block -> answer directly" and never called a tool; see sft_format.py)
     kept, dropped, lengths = [], 0, []
     for r in rows:
-        text = tokenizer.apply_chat_template(r["messages"], tools=r.get("tools"), tokenize=False, enable_thinking=False)
+        text = uniform_think(tokenizer.apply_chat_template(mark_no_think(r["messages"]), tools=r.get("tools"), tokenize=False,
+                                                           enable_thinking=False))
         n = len(tokenizer(text, add_special_tokens=False)["input_ids"])
         if n > a.max_seq:
             dropped += 1          # never truncate: the answer is at the end
