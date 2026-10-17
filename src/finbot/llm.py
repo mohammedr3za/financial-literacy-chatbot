@@ -59,8 +59,12 @@ def _openai(s: Settings):
         from langchain_openai import ChatOpenAI
     except ImportError as exc:
         raise RuntimeError("Install langchain-openai to use FINBOT_BACKEND=openai.") from exc
+    import httpx
+    # vLLM closes idle keep-alive connections after 5 s; reusing one it just closed fails with a connection error
+    # (max_retries=0), so drop idle connections sooner (2 live question-bank runs lost answers to this)
+    client = httpx.Client(timeout=s.request_timeout, limits=httpx.Limits(keepalive_expiry=2.0))
     return ChatOpenAI(model=s.model, base_url=s.base_url, api_key="not-needed", temperature=s.temperature,
-                      max_tokens=s.output_cap("openai"), timeout=s.request_timeout, max_retries=0,
+                      max_tokens=s.output_cap("openai"), timeout=s.request_timeout, max_retries=0, http_client=client,
                       extra_body={"chat_template_kwargs": {"enable_thinking": bool(s.thinking)}})
 
 
