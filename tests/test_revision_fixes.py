@@ -220,3 +220,25 @@ def test_hindi_and_tamil_risk_words_count_as_a_risk_disclosure():
     assert "no_risk_disclosure" not in review_answer(HINDI_DRAFT + " इसमें बाजार जोखिम है।", flags, [], 0).codes
     assert "no_risk_disclosure" not in review_answer("SIP ஒரு முதலீட்டு முறை. இதில் சந்தை அபாயம் உள்ளது.", flags, [], 0).codes
     assert "no_risk_disclosure" in review_answer(HINDI_DRAFT, flags, [], 0).codes
+
+
+# ---------- FINBOT_THINKING=auto leaves Ollama's think unset (finbot-8b-v2 calls tools only without a pre-filled block)
+def test_thinking_auto_leaves_think_unset_on_ollama_and_off_on_vllm(monkeypatch):
+    from finbot.llm import get_runnables
+    from finbot.tools.registry import CALC_TOOLS
+    monkeypatch.setenv("FINBOT_THINKING", "auto")
+    s = Settings(backend="ollama")
+    assert s.thinking is None
+    plain, _ = get_runnables(CALC_TOOLS, s)
+    assert plain.reasoning is None
+    assert Settings(backend="openai").thinking is None
+    forced = get_forced_tool_runnable(CALC_TOOLS, Settings(backend="openai", fallback_model="none"))
+    assert forced.bound.extra_body["chat_template_kwargs"]["enable_thinking"] is False
+    monkeypatch.setenv("FINBOT_THINKING", "off")
+    assert Settings().thinking is False
+
+
+def test_a_think_block_left_in_a_reply_is_removed():
+    fb, _ = bot("<think>\n\n</think>\n\nA mutual fund pools money from many investors; its value moves with the market.")
+    t = fb.ask("What is a mutual fund?", thread_id="think-strip")
+    assert "<think>" not in t["answer"] and t["answer_text"].startswith("A mutual fund")

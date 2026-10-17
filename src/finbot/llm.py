@@ -61,7 +61,7 @@ def _openai(s: Settings):
         raise RuntimeError("Install langchain-openai to use FINBOT_BACKEND=openai.") from exc
     return ChatOpenAI(model=s.model, base_url=s.base_url, api_key="not-needed", temperature=s.temperature,
                       max_tokens=s.output_cap("openai"), timeout=s.request_timeout, max_retries=0,
-                      extra_body={"chat_template_kwargs": {"enable_thinking": s.thinking}})
+                      extra_body={"chat_template_kwargs": {"enable_thinking": bool(s.thinking)}})
 
 
 def _has_fallback(s: Settings) -> bool:

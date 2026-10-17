@@ -14,7 +14,9 @@ class Settings:
     model: str = field(default_factory=lambda: os.getenv("FINBOT_MODEL", "qwen3:8b"))
     backend: str = field(default_factory=lambda: os.getenv("FINBOT_BACKEND", "ollama"))
     base_url: str = field(default_factory=lambda: os.getenv("FINBOT_BASE_URL", "http://localhost:11434"))
-    thinking: bool = field(default_factory=lambda: os.getenv("FINBOT_THINKING", "off").lower() == "on")
+    # on / off / auto (None: Ollama's think left unset; finbot-8b-v2 needs it, SPEC 2 changelog 2026-10-17)
+    thinking: bool | None = field(default_factory=lambda: {"on": True, "auto": None}.get(
+        os.getenv("FINBOT_THINKING", "off").lower(), False))
     num_ctx: int = field(default_factory=lambda: int(os.getenv("FINBOT_NUM_CTX", "16384")))
     temperature: float = field(default_factory=lambda: float(os.getenv("FINBOT_TEMPERATURE", "0.0")))
     # output cap per backend (SPEC 2): vLLM has room for longer answers; FINBOT_MAX_OUTPUT_TOKENS is the older Ollama name
