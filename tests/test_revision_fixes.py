@@ -149,3 +149,41 @@ def test_graph_refuses_the_no_interest_assumption_when_the_question_mentions_int
     first = t["tools"][0]["output"]
     assert "error" in first and "interest" in first["error"]
     assert t["tools"][1]["output"]["result"]["net_income"] == 105_000
+
+
+# ---------- a calculation the router does not name (three or more figures) counts as a recognised calculation
+CAR = "I need ₹30 lakh in 6 years for a car. How much should I invest today at 8% a year?"
+CAR_BY_HAND = ("To reach ₹30 lakh in 6 years at 8%, you should invest about ₹18,90,510 today. Returns are not guaranteed, so review the plan every year and keep an emergency fund. "
+               "Equity funds can fall in the short term, and a mix with debt funds lowers the risk of missing the goal. "
+               "Move the money to safer debt funds in the last two years before you buy the car, so a late market fall "
+               "does not cut the amount you have when you need it.")
+
+
+def test_unrouted_calculation_with_three_figures_is_forced_to_call_a_tool():
+    forced = ScriptedModel(responses=[tool_call("tvm", {"solve_for": "pv", "fv": 3000000, "annual_rate_pct": 8, "years": 6}, "c1")])
+    fb, _ = bot(CAR_BY_HAND, "You should invest the amount shown in the table today.", forced=forced)
+    fb.ask(CAR, thread_id="car-force")
+    assert len(forced.calls) == 1
+
+
+def test_unrouted_calculation_by_hand_gets_the_fallback_not_a_pruned_answer():
+    fb, _ = bot(CAR_BY_HAND, CAR_BY_HAND)
+    t = fb.ask(CAR, thread_id="car-fallback")
+    assert "could not compute this reliably" in t["answer_text"] and "18,90,510" not in t["answer"]
+
+
+def test_ordinary_words_are_not_a_request_for_inputs():
+    from finbot.review import asks_for_inputs
+    assert not asks_for_inputs("A debt mix lowers the risk of missing the goal, without the stress of daily swings.")
+    assert asks_for_inputs("Please provide the cash flows.") and asks_for_inputs("I need your monthly income to work this out.")
+
+
+def test_tool_backed_answer_loses_only_a_stray_unverified_estimate():
+    # live h02: "14.27 years" from tvm plus a "Rule of 110 gives 13.75 years" aside turned into the blank fallback
+    q = "At 6% a year, how long will it take for my money to double?"
+    call = {"solve_for": "years", "annual_rate_pct": 6, "pv": 1, "fv": 2}
+    final = ("It will take about **11.90 years** for your money to double at 6% a year. As a rough guide, the Rule of 70 "
+             "gives 11.67 years.")
+    fb, _ = bot(tool_call("tvm", call, "c1"), final, final)
+    t = fb.ask(q, thread_id="double")
+    assert "could not compute" not in t["answer_text"] and "11.90 years" in t["answer_text"] and "11.67" not in t["answer"]

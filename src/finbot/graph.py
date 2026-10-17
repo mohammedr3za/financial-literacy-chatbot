@@ -18,6 +18,7 @@ from .tables import to_markdown
 from .tools.financial_solver import KIND as SOLVER_KIND
 from .tools.financial_solver import NO_INTEREST
 from .tools.financial_solver import resolve as solver_name
+from .routing import missing_tools
 from .tools.fmt import MONEY_STYLE
 from .tools.registry import CALC_TOOLS, TOOLS_BY_NAME
 
@@ -249,17 +250,31 @@ _MENTIONS_INTEREST = re.compile(r"(?i)\binterest\b(?!\s+rates?\b)")   # an inter
 FORCE_TOOL_CODES = {"no_tool_for_numbers", "wrong_tool"}   # reviewer codes whose revision must call a tool (vLLM)
 
 
+def calculation_question(flags: dict, question: str) -> bool:
+    """A recognised calculation (SPEC 3.1): a calc_types route, or calculation intent with at least three figures in the
+    question (a lump-sum or goal question the router does not name). Safety questions ("this coin will 10x") have fewer."""
+    if flags.get("calc_types"):
+        return True
+    plain = re.sub(r"\(=\s*[\d.,]+\)", "", question or "")      # not the "(= 2500000)" notes precheck adds
+    return bool(flags.get("calculation_intent")) and len(re.findall(r"\d+(?:[.,]\d+)*", plain)) >= 3
+
+
 def without_unverified(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict) -> str:
     """The final answer after a failed revision, with no unverified figure (SPEC 3.1). A recognised calculation gets the
-    number-free fallback: its key figures must come from a tool. A question that only sounds like a calculation (a scam
+    number-free fallback when no tool (or the wrong one) gave its key figures; with the right tool, only the sentences
+    with unverified figures go, if a figure is left. A question that only sounds like a calculation (a scam
     check, "can this coin 10x"), or an answer that asks for missing inputs, loses only the sentences with unverified
     figures, if enough verified text is left."""
     bad = unverified_figures(answer, question, evidence, tools_used, flags)
     if not bad:
         return answer
-    if not flags.get("calc_types") or asks_for_inputs(answer):   # a request for inputs presents no computed result
-        pruned = prune_figures(_strip_math_markup(answer), bad)
-        if len(pruned) >= MIN_PRUNED_CHARS and not unverified_figures(pruned, question, evidence, tools_used, flags):
+    pruned = prune_figures(_strip_math_markup(answer), bad)
+    clean = not unverified_figures(pruned, question, evidence, tools_used, flags)
+    if not calculation_question(flags, question) or asks_for_inputs(answer):   # a request for inputs shows no result
+        if len(pruned) >= MIN_PRUNED_CHARS and clean:
+            return pruned
+    elif tools_used and not missing_tools(flags.get("calc_types", []), tools_used):
+        if clean and re.search(r"\d", pruned):    # the right tool gave the key figures: drop only a stray estimate
             return pruned
     return not_reliable(question)
 
@@ -503,7 +518,7 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         last = msgs[-1]
         codes = set(state.get("review", {}).get("codes", []))
         draft = next((m for m in reversed(msgs) if isinstance(m, AIMessage)), None)
-        force = (forced_model is not None and not capped and state["flags"].get("calc_types")
+        force = (forced_model is not None and not capped and calculation_question(state["flags"], text_of(msgs[qi]))
                  and isinstance(last, HumanMessage) and last.name == "reviewer" and FORCE_TOOL_CODES & codes
                  and "hypothetical_example" not in codes and not asks_for_inputs(text_of(draft) if draft else ""))
         runner = forced_model if force else model if capped else model_with_tools

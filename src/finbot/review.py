@@ -443,9 +443,14 @@ _ASKS_INPUT = re.compile(r"(?i)\b(please (provide|share|give|tell)|could you (pr
                          r"need the|missing|not (given|provided|specified|stated)|without (the|knowing))\b")
 
 
+# a direct request to the user for figures; stricter than _ASKS_INPUT ("the risk of missing the goal" is no request)
+_REQUESTS_INPUT = re.compile(r"(?i)\b((please|could you|can you) (provide|share|give|tell|confirm|specify)|"
+                             r"i need (the|to know|more|your)|let me know|if you (share|provide|give|tell))\b")
+
+
 def asks_for_inputs(text: str) -> bool:
-    """The answer asks the user for missing figures (check 12's request); such a draft is never forced to call a tool."""
-    return bool(_ASKS_INPUT.search(text or ""))
+    """The answer asks the user for missing figures; such a draft is not forced to call a tool, and keeps its text."""
+    return bool(_REQUESTS_INPUT.search(text or ""))
 
 
 def has_hypothetical_example(text: str) -> bool:
