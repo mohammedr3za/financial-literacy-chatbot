@@ -1,5 +1,6 @@
 """Deterministic answer review against the trust checklist (SPEC 3.1, review node)."""
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from .routing import HINTS, REQUIRED_TOOLS, missing_tools
@@ -19,6 +20,7 @@ _GUARANTEE_PHRASES = re.compile(
     r"|\b(yes|confirmed)[,!.]?\s+(it|this|the stock|you)\s+will\s+(give|make|earn|return)")
 _RISK_WORDS = re.compile(r"(?i)\b(risks?|risky|not guaranteed|no guarantee|cannot be guaranteed|can't be guaranteed|"
                          r"volatil\w+|could lose|may lose|can lose|loss(es)?|market[- ]linked|subject to market|fluctuat\w+|uncertain)\b")
+_RISK_WORDS_INDIC = re.compile("जोखिम|नुकसान|उतार-चढ़ाव|गारंटी नहीं|ஆபத்து|அபாய|நஷ்ட|இழப்பு|ரிஸ்க்")   # Hindi, Tamil
 _CITATION = re.compile(r"\[S\d+\]")
 _REFERRAL = re.compile(r"(?i)(sebi[- ]registered|registered investment advis[eo]r|investment advis[eo]r|financial advis[eo]r|"
                        r"certified financial planner|registered advis[eo]r)")
@@ -515,7 +517,7 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
     needs_risk = (flags.get("high_risk_topic") or flags.get("guarantee_seeking") or flags.get("personal_advice_request") or (
         flags.get("investment_topic") and not flags.get("regulatory_topic") and not flags.get("calculation_intent")
         and not flags.get("concept_question") and not flags.get("statement_data")))
-    if needs_risk and not _RISK_WORDS.search(text):
+    if needs_risk and not (_RISK_WORDS.search(text) or _RISK_WORDS_INDIC.search(text)):
         codes.append("no_risk_disclosure")
         issues.append("It discusses an investment without stating the risks. Add a short, specific risk disclosure.")
     sources_relevant = num_sources > 0
@@ -583,3 +585,20 @@ def reviewer_note(result: ReviewResult) -> str:
     bullet = "\n".join(f"- {i}" for i in result.issues)
     return ("Reviewer note (automatic quality check, not from the user). Your previous answer has these problems:\n"
             f"{bullet}\nRewrite your complete answer for the user, fixing every problem. Do not mention this note.")
+
+
+# a Hindi or Tamil rewrite that lost its vowel signs and viramas (SPEC 3.1, 2026-10-17 live 27B failure)
+_INDIC = re.compile(r"[\u0900-\u097F\u0B80-\u0BFF]")
+
+
+def _mark_ratio(text: str) -> float | None:
+    letters = _INDIC.findall(text or "")
+    if len(letters) < 50:
+        return None
+    return sum(unicodedata.category(c) in ("Mn", "Mc") for c in letters) / len(letters)
+
+
+def script_damaged(draft: str, revision: str) -> bool:
+    """The revision kept under 70% of the vowel-sign and virama density of a Hindi or Tamil draft."""
+    a, b = _mark_ratio(draft), _mark_ratio(revision)
+    return a is not None and b is not None and b < 0.7 * a

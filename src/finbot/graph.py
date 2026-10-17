@@ -13,7 +13,7 @@ from .config import Settings, get_settings
 from .precheck import precheck as run_precheck
 from .prompts import SYSTEM_PROMPT, context_block
 from .review import (FOOTER, _strip_math_markup, asks_for_inputs, cut_hypothetical, prune_figures, review_answer,
-                     reviewer_note, unsupported_figures)
+                     reviewer_note, script_damaged, unsupported_figures)
 from .tables import to_markdown
 from .tools.financial_solver import KIND as SOLVER_KIND
 from .tools.financial_solver import NO_INTEREST
@@ -620,6 +620,12 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         tools_used = [tc["name"] for m in turn if isinstance(m, AIMessage) for tc in (m.tool_calls or []) if tc["id"] not in failed]
         last_ai = next(m for m in reversed(msgs) if isinstance(m, AIMessage))
         answer = text_of(last_ai)
+        restored = False
+        notes = [i for i, m in enumerate(msgs) if i > qi and isinstance(m, HumanMessage) and m.name == "reviewer"]
+        if notes:   # a Hindi/Tamil rewrite that lost its vowel signs: ship the clean first draft instead (SPEC 3.1)
+            draft = next((m for m in reversed(msgs[:notes[-1]]) if isinstance(m, AIMessage) and not m.tool_calls), None)
+            if draft is not None and script_damaged(text_of(draft), answer):
+                answer, restored = text_of(draft), True
         srcs = state.get("sources", [])
         prev = earlier_turns(msgs[:qi])[-1:]     # a follow-up may quote the previous turn's question and tool results
         evidence = "\n".join([text_of(msgs[qi])] + [x["text"] for x in srcs]
@@ -630,7 +636,7 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         if result.passed:
             out = {"review": {"passed": True, "codes": [], "first_draft_codes": prior, "footer": False}}
             cleaned = strip_tool_narration(answer)
-            if cleaned != answer:
+            if cleaned != answer or restored:
                 out["messages"] = [AIMessage(content=cleaned, id=last_ai.id)]
             return out
         if state.get("revisions", 0) < s.max_revisions:

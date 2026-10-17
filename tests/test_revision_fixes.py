@@ -187,3 +187,36 @@ def test_tool_backed_answer_loses_only_a_stray_unverified_estimate():
     fb, _ = bot(tool_call("tvm", call, "c1"), final, final)
     t = fb.ask(q, thread_id="double")
     assert "could not compute" not in t["answer_text"] and "11.90 years" in t["answer_text"] and "11.67" not in t["answer"]
+
+
+# ---------- Hindi/Tamil: a revision that lost the vowel signs is replaced by the clean first draft
+HINDI_Q = "SIP क्या है और यह एकमुश्त निवेश से कैसे अलग है?"
+HINDI_DRAFT = ("SIP एक निवेश विधि है जहाँ आप हर महीने एक निश्चित राशि म्यूचुअल फंड में लगाते हैं। इसका मुख्य लाभ रुपया औसत है: "
+               "जब बाजार गिरता है तो आपको अधिक यूनिट मिलते हैं। एकमुश्त निवेश में पूरी राशि एक बार में लगाई जाती है।")
+
+
+def _strip_marks(text):
+    import unicodedata
+    return "".join(c for c in text if not ("ऀ" <= c <= "ॿ" and unicodedata.category(c) in ("Mn", "Mc")))
+
+
+def test_script_damage_is_detected():
+    from finbot.review import script_damaged
+    assert script_damaged(HINDI_DRAFT, _strip_marks(HINDI_DRAFT) + " Returns are not guaranteed; there is market risk.")
+    assert not script_damaged(HINDI_DRAFT, HINDI_DRAFT + " इसमें बाजार जोखिम है।")
+    assert not script_damaged("An English answer about SIPs and lump sums.", "A shorter English answer.")
+
+
+def test_damaged_hindi_revision_is_replaced_by_the_clean_draft():
+    damaged = _strip_marks(HINDI_DRAFT) + " Returns are not guaranteed and there is market risk."
+    fb, _ = bot(HINDI_DRAFT, damaged)
+    t = fb.ask(HINDI_Q, thread_id="hindi-damage")
+    assert "म्यूचुअल फंड में लगाते हैं" in t["answer_text"] and _strip_marks(HINDI_DRAFT)[:40] not in t["answer_text"]
+
+
+def test_hindi_and_tamil_risk_words_count_as_a_risk_disclosure():
+    from finbot.review import review_answer
+    flags = {"investment_topic": True}
+    assert "no_risk_disclosure" not in review_answer(HINDI_DRAFT + " इसमें बाजार जोखिम है।", flags, [], 0).codes
+    assert "no_risk_disclosure" not in review_answer("SIP ஒரு முதலீட்டு முறை. இதில் சந்தை அபாயம் உள்ளது.", flags, [], 0).codes
+    assert "no_risk_disclosure" in review_answer(HINDI_DRAFT, flags, [], 0).codes
