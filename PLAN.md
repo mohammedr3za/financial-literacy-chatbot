@@ -220,3 +220,12 @@ Caution: any fix must be checked on *new* problems, not these 30, or the score m
   - held-out: 20/20 against 17/20;
   - question bank: 0 blank fallbacks against 4.
 - 2026-10-17 v3 evaluation (A10, production code): test bank 113/159 (71%), CA 72/97 (74%), McGraw 17/34 (98/184 parts); concept 27/27, safety 15/16, Indian languages 3/10. The 27B on the same sets: 151/159, 92/97, 32/34. Failure causes are in docs/finetune_v4_plan.md. All Lambda GPUs were terminated at the user's request after the results and chat logs were copied to results/lambda_a10 and results/lambda_a100.
+- 2026-10-19 v4 evaluation (A100, Ollama Q5_K_M, production code):
+  - Training: 1,941 examples, eval_loss 0.397.
+  - Test bank 133/159 (84%), up from 71%.
+  - CA 72/97 → 76/97 (78%).
+  - McGraw 17/34 → 19/34, with parts 98/184 → 92/184.
+  - Indian languages 3/10 → 9/10, concept 26/27, safety 15/16, held-out 19/20, question bank 7/11.
+  - **M8 acceptance not met:** the test bank misses 85% by 2 questions, CA by 6 and McGraw by 5; concept and held-out are each 1 lower.
+  - Remaining causes: 17 blank fallbacks; 16 answers with no tool call; tool-argument errors (project_cash_flows "life", npv_irr "cashflows2", capital_gains prices, calculate syntax).
+  - Report: results/lambda_v4_eval/v4_report.md. All Lambda GPUs terminated.
