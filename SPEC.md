@@ -355,3 +355,18 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
   - **Tool arguments:** tools built from a plain function used to drop unknown argument names silently. 44 v3 `tvm` calls lost the rate, passed under another name. The graph now maps common aliases (`rate`, `rate_pct`, `interest_rate` → `annual_rate_pct` or the tool's one rate field; `target_amount`/`goal` → `target`; `loan_amount` → `principal`) and rejects any other unknown name with "did you mean …". Tools with strict schemas already rejected them.
   - **Growing annuity:** `perpetuity(periods=n)`. A team report showed the 27B stalling by hand on "$1,000,000 in one year, growing 3.2% for 25 years at 7.2%".
   - **New routes:** `simple_interest` (`calculate`), `sinking_fund` (`tvm` solving for `pmt` with `fv`), `ppf` (`tvm` with yearly deposits at the start, `when="begin"`) and `growing_annuity` (`perpetuity` with `periods`). A SIP future value now needs `sip_future_value`; v3 used `goal_saving`.
+- 2026-10-19 (v4.1 code fixes, from the v4 evaluation; no retraining):
+  - **Safety:** a guarantee check ("2% per month with zero risk") or a decision question ("₹5 lakh bonus: lump sum or SIP?") is no longer routed to the SIP calculator. A SIP future value needs an amount plus a rate or a term. Before this, both answers were blanked to "could not compute this reliably".
+  - **Phone numbers:** a helpline or phone number that is not in the sources is flagged (`unverified_helpline`) and removed if the revision keeps it. v4 invented "1900 1800 180" instead of 1930.
+  - **Routes:**
+    - "Can I still claim 80CCD(1B)…" is a `tax_rules` question.
+    - Post-tax, real post-tax and Fisher questions go to `real_return`, which now also accepts `calculate`. They no longer go to `tax_rules` or `bond`.
+    - Emergency-fund questions are a new `emergency_fund` route (`calculate`).
+    - A sinking fund needs `tvm`, since `goal_saving` assumes monthly deposits.
+  - **Partial answers:** after a failed revision, a calculation where some parts used the right tool keeps those verified parts. The other parts are removed, with a note that they could not be verified. Before this, the whole answer was blanked (for example a bond's YTM and current yield, when the effective yield was computed by hand).
+  - **Tool arguments:**
+    - The aliases also apply to strict-schema tools, which rename only (for example `life` → `years` or `life_years`, `profit`/`capital_gain` → `gain`).
+    - `capital_gains(term='long'|'short')` is used when only the gain and its type are given.
+    - `calculate` accepts ₹/$/Rs., ×, ÷, the Unicode minus and "8%" (= 8/100). It answers an equation or an unknown letter with "use solve_equation", and a ratio "a : b" with "compute each part".
+  - **Hints:** two projects with NPV and IRR (one `npv_irr` call per project; the crossover rate is the IRR of the difference) and a bond's effective annual yield (`effective_annual_rate` on the YTM).
+  - **KB:** official sources for 1930 / cybercrime.gov.in, the SCSS and PPF limits, and SEBI's F&O loss study.

@@ -53,8 +53,19 @@ def _eval(node):
     if isinstance(node, ast.Tuple):
         raise ValueError("Write plain numbers without thousands separators, e.g. 2000000 not 20,00,000.")
     if isinstance(node, ast.Name):
-        raise ValueError(f"Unknown name '{node.id}'. Only numbers, pi, e and {sorted(_FUNCS)} are allowed.")
+        raise ValueError(f"Unknown name '{node.id}'. Only numbers, pi, e and {sorted(_FUNCS)} are allowed; "
+                         "for an unknown, use solve_equation.")
     raise ValueError(f"Not allowed in an arithmetic expression: {type(node).__name__}.")
+
+
+_CURRENCY = re.compile(r"₹|\$|\bRs\.?\s*|\bINR\s*", re.I)
+_PCT_SIGN = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*%(?!\s*[\d(.])")   # "8%" is 8/100; "10 % 3" stays a remainder
+
+
+def _clean(expression: str) -> str:
+    """Symbols a model copies from the question: ^ for powers, ×, ÷, the Unicode minus, currency signs, "8%"."""
+    e = expression.replace("^", "**").replace("×", "*").replace("·", "*").replace("÷", "/").replace("−", "-").replace("–", "-")
+    return _PCT_SIGN.sub(r"(\1/100)", _CURRENCY.sub("", e)).strip()
 
 
 def calculate(expression: str) -> dict:
@@ -62,10 +73,16 @@ def calculate(expression: str) -> dict:
         raise ValueError("expression must be a non-empty string.")
     if len(expression) > MAX_LEN:
         raise ValueError(f"expression is longer than {MAX_LEN} characters.")
-    normalized = expression.replace("^", "**").strip()
+    normalized = _clean(expression)
     try:
         tree = ast.parse(normalized, mode="eval")
     except SyntaxError as exc:
+        if "=" in normalized:
+            raise ValueError("This is an equation. To find the unknown, use solve_equation(equation=..., solve_for=...).") from None
+        if re.search(r"\d\s*:\s*\d", normalized):
+            raise ValueError("A ratio a : b is not one expression: compute each part with its own calculate call.") from None
+        if re.search(r"\d[a-zA-Z_]", normalized):
+            raise ValueError("Write multiplication with * (2*r, not 2r). For an unknown, use solve_equation.") from None
         raise ValueError(f"Could not parse the expression: {exc.msg}.") from None
     steps: list[dict] = []
 

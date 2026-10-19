@@ -27,7 +27,7 @@ NOTES = [
 
 def capital_gains(purchase_value: float = 0.0, sale_value: float = 0.0, holding_months: float = 0.0,
                   asset: str = "listed_equity", financial_year: str = "2025-26", expenses: float = 0.0,
-                  ltcg_exemption_used: float = 0.0, gain: float | None = None) -> dict:
+                  ltcg_exemption_used: float = 0.0, gain: float | None = None, term: str | None = None) -> dict:
     """Capital gains tax on listed shares or equity mutual funds. gain may be given instead of purchase and sale values."""
     if asset not in ("listed_equity", "equity_fund", "debt_fund"):
         raise ValueError("asset must be 'listed_equity', 'equity_fund' or 'debt_fund'.")
@@ -39,11 +39,15 @@ def capital_gains(purchase_value: float = 0.0, sale_value: float = 0.0, holding_
         raise ValueError("financial_year must be '2025-26' or '2026-27'.")
     if gain is None:
         if not (purchase_value and sale_value):
-            raise ValueError("Give purchase_value and sale_value (or the gain).")
+            raise ValueError("Give purchase_value and sale_value, or gain=<the profit> if only the profit is given "
+                             "(with holding_months, or term='long' or 'short'). Several gains: one call per gain.")
         gain = sale_value - purchase_value - expenses
-    if holding_months <= 0:
-        raise ValueError("holding_months is how long the shares or units were held, in months (2 years = 24).")
-    long_term = holding_months > LONG_TERM_AFTER_MONTHS
+    if term not in (None, "long", "short"):
+        raise ValueError("term must be 'long' or 'short'.")
+    if holding_months <= 0 and term is None:
+        raise ValueError("holding_months is how long the shares or units were held, in months (2 years = 24); if only "
+                         "the type of gain is known, pass term='long' or 'short' instead.")
+    long_term = holding_months > LONG_TERM_AFTER_MONTHS if holding_months > 0 else term == "long"
     rate = LTCG_RATE_PCT if long_term else STCG_RATE_PCT
     exemption = max(0.0, min(LTCG_EXEMPTION - ltcg_exemption_used, gain)) if long_term and gain > 0 else 0.0
     taxable = max(0.0, gain - exemption)
@@ -58,7 +62,8 @@ def capital_gains(purchase_value: float = 0.0, sale_value: float = 0.0, holding_
     rows = [["Sale value", format_inr(sale_value, 0)], ["Purchase value", format_inr(purchase_value, 0)]] if sale_value else []
     if expenses:
         rows.append(["Expenses (brokerage etc.)", format_inr(expenses, 0)])
-    rows += [["Capital gain", format_inr(gain, 0)], ["Holding period", f"{holding_months:g} months ({term})"]]
+    held = f"{holding_months:g} months ({term})" if holding_months > 0 else term.capitalize()
+    rows += [["Capital gain", format_inr(gain, 0)], ["Holding period", held]]
     if long_term:
         rows.append(["Exemption used (₹1.25 lakh a year)", format_inr(exemption, 0)])
     rows += [["Taxable gain", format_inr(taxable, 0)], [f"Tax at {rate:g}% ({section})", format_inr(tax, 0)],

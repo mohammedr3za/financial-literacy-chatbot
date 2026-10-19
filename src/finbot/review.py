@@ -31,6 +31,10 @@ _DOMAIN = re.compile(r"(?i)\b(?:https?://)?((?:[a-z0-9-]+\.)+(?:gov\.in|org\.in|
 ALLOWED_DOMAINS = ("sebi.gov.in", "rbi.org.in", "incometax.gov.in", "incometaxindia.gov.in", "amfiindia.com",
                    "mutualfundssahihai.com", "dicgc.org.in", "irdai.gov.in", "pfrda.org.in", "nseindia.com", "bseindia.com",
                    "nsdl.co.in", "cdslindia.com", "cybercrime.gov.in")
+# a helpline or phone number the answer gives: digits right after a calling word (v4 invented "1900 1800 180" for 1930)
+_HELPLINE = re.compile(r"(?i)(?:helplines?|help line|toll[- ]free|hotline|dial|(?:phone|contact|helpline|mobile) (?:number|no\.?)|"
+                       r"\bcall(?:ing)?\b(?!\s+(?:options?|money|price|premium|auction))|हेल्पलाइन|कॉल|फ़ोन|फोन|உதவி எண்|அழைக்க)"
+                       r"[^\d\n₹$]{0,30}?(?<![\d.,₹$])((?:\+91[\s-]?)?\d(?:[\d\s-]{1,14}\d)?)(?![\d.,%]|\s*(?:%|lakh|crore|years?|months?|days?))")
 _FIGURE = re.compile(r"(?i)(?:(₹|rs\.?|inr|\$|usd|€|£)\s*)?(?<![\w.])(\d+(?:,\d+)*(?:\.\d+)?)\s*(%|per ?cent|lakhs?|lacs?|crores?|cr\b)?")
 _UNIT = {"lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "lacs": 1e5, "crore": 1e7, "crores": 1e7, "cr": 1e7}
 
@@ -52,6 +56,18 @@ def _figures(text: str, claims_only: bool) -> set[float]:
 def _big_plain(num: str) -> bool:
     digits = num.replace(",", "").split(".")[0].lstrip("0")
     return len(digits) >= 4 or "." in num
+
+
+def unverified_numbers(answer: str, evidence: str) -> list[str]:
+    """Helpline or phone numbers in the answer that the evidence (question, sources, tool results) does not contain."""
+    known = re.sub(r"[\s-]", "", evidence or "")
+    out = []
+    for m in _HELPLINE.finditer(answer or ""):
+        num = m.group(1).strip()
+        digits = re.sub(r"\D", "", num)
+        if len(digits) >= 3 and digits not in known and num not in out:
+            out.append(num)
+    return out
 
 
 def unsupported_figures(answer: str, evidence: str, rel_tol: float = 0.0, plain_numbers: bool = False,
@@ -569,6 +585,11 @@ def review_answer(answer: str, flags: dict, tools_used: list[str], num_sources: 
         codes.append("unlisted_link")
         issues.append(f"It mentions websites that may not exist or are not official: {', '.join(unknown)}. "
                       "Only mention sebi.gov.in, rbi.org.in, incometax.gov.in, amfiindia.com, dicgc.org.in or scores.sebi.gov.in.")
+    phones = unverified_numbers(text, evidence) if evidence is not None else []
+    if phones:
+        codes.append("unverified_helpline")
+        issues.append(f"It gives phone or helpline numbers that are not in the sources: {', '.join(phones)}. Never give a number "
+                      "the sources do not state; point to the official website from the sources, or say you cannot verify it.")
     if evidence is not None and flags.get("calculation_intent") and tools_used:
         bad = unsupported_figures(_strip_math_markup(text), evidence, rel_tol=0.005, plain_numbers=True)
         if bad:

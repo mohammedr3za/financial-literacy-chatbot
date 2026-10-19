@@ -432,7 +432,7 @@ def income_tax(financial_year: str = "2026-27", regime: Literal["both", "new", "
 def capital_gains(purchase_value: float = 0, sale_value: float = 0, holding_months: float = 0,
                   asset: Literal["listed_equity", "equity_fund", "debt_fund"] = "listed_equity",
                   financial_year: str = "2025-26", expenses: float = 0, ltcg_exemption_used: float = 0,
-                  gain: float | None = None) -> str:
+                  gain: float | None = None, term: Literal["long", "short"] | None = None) -> str:
     """Capital gains tax on selling listed shares or equity mutual-fund units (India, resident): short-term (held 12 months or less) 20%; long-term 12.5% on the gain above ₹1.25 lakh a year; 4% cess; no 87A rebate. Pass the figures the user gave.
 
     Args:
@@ -444,10 +444,11 @@ def capital_gains(purchase_value: float = 0, sale_value: float = 0, holding_mont
         expenses: Brokerage and other selling costs, only if given.
         ltcg_exemption_used: Other long-term equity gains already made this year, only if given.
         gain: The profit, if the user gives only the gain instead of the two values.
+        term: 'long' or 'short', only when the gain is given with its type but not the holding period.
     """
     return _run(CG.capital_gains, purchase_value=purchase_value, sale_value=sale_value, holding_months=holding_months,
                 asset=asset, financial_year=financial_year, expenses=expenses, ltcg_exemption_used=ltcg_exemption_used,
-                gain=gain)
+                gain=gain, term=term)
 
 
 @tool(parse_docstring=True)

@@ -22,6 +22,7 @@ _PERIODIC = re.compile(r"\b(sip|every month|each month|per month|a month|monthly
 # a loan calculation needs an amount plus a rate or a second amount; "Should I pay off a 9% loan or invest?" is a decision
 _MONEY = re.compile(r"(₹|\$|\brs\.?\s?|\binr\s?)\s*\d|\d[\d,]*(\.\d+)?\s*(lakhs?|lacs?|crores?|cr\b|k\b|thousand|million|"
                     r"लाख|करोड|லட்சம்|கோடி)|(?<![\d.,])\d{1,3}(,\d{2,3})+(?![\d,])|(?<![\d.,])\d{4,}(?![\d,])", I)
+_TERM = re.compile(r"\d+\s*(years?|yrs?|months?|saal|varusham|साल|வருட|ஆண்டு)", I)
 _PCT = re.compile(r"\d\s*(%|per ?cent\b|percent\b|प्रतिशत|சதவீத)", I)
 
 
@@ -43,7 +44,7 @@ _SALARY = re.compile(r"\b(salary|ctc|earn(s|ing)?|per month|a month|monthly inco
 _RULE_ITEM = re.compile(r"\bstandard deduction\b|\brebate\b|\b87a\b|\b80c+d?\b|\b80ccd|\b80d\b|\b80tta\b|\bsection \d+|"
                         r"\bdeductions?\b|\bexempt(ion)?\b|\bslabs?\b|\bcess\b|\bsurcharge\b|\bzero (income )?tax\b|\bno tax\b", I)
 _RULE_ASK = re.compile(r"\bhow much\b|\bwhat('s| is| are)\b|\bmaximum\b|\bmax\b|\blimit\b|\ballowed\b|\beligible\b|\brate\b|"
-                       r"\bthreshold\b|\bcan i (claim|get)\b|\bhighest\b", I)
+                       r"\bthreshold\b|\bcan (i|we|one) (still |also )?(claim|get|avail|use)\b|\bhighest\b", I)
 _TAX_WORD = re.compile(r"\btax\w*\b|\bregime\b|\bitr\b|\bsection\b|\b80c|\b80d|\b87a\b", I)
 
 
@@ -58,6 +59,8 @@ def _capital_gains(q: str) -> bool:
 
 
 def _tax_rule(q: str) -> bool:
+    if re.search(r"\b(post|after)[- ]tax (rate of )?(return|yield)\b|\breal (post[- ]tax |after[- ]tax )?return\b", q, I):
+        return False
     return bool(_RULE_ITEM.search(q) and _RULE_ASK.search(q) and _TAX_WORD.search(q))
 
 
@@ -71,7 +74,9 @@ ROUTES = [  # (type, test) in priority order
     ("present_value", lambda q: bool(_ASK_AMOUNT.search(q) and _TARGET.search(q) and _LUMP.search(q) and not _PERIODIC.search(q))),
     ("years", lambda q: bool(re.search(r"\b(how many years|how long|years? to (double|triple|reach)|doubling time|rule of 72)\b", q, I)
                              or re.search(r"\b(double|triple)\b.{0,15}\bmoney\b", q, I))),
-    ("real_return", lambda q: bool(re.search(r"\breal (rate of )?return\b|\binflation[- ]adjusted\b|\bafter inflation\b|\bbeat(ing)? inflation\b", q, I))),
+    ("real_return", lambda q: bool(re.search(r"\breal (post[- ]tax |after[- ]tax )?(rate of )?(return|yield)\b|\breal (interest )?rate\b|\bfisher\b|"
+                                             r"\b(post|after)[- ]tax (rate of )?(return|yield)\b|\binflation[- ]adjusted\b|\bafter inflation\b|"
+                                             r"\bbeat(ing)? inflation\b", q, I))),
     ("effective_rate", lambda q: bool(re.search(r"\beffective (annual )?(rate|yield|interest)\b|\bear\b|\bapy\b|annual percentage yield", q, I))),
     ("emi", lambda q: bool(re.search(r"\bemi\b|\bequated monthly\b|\bmonthly instal+ments?\b|ईएमआई|इएमआई|இஎம்ஐ", q, I))
      and bool(_MONEY.search(q))),
@@ -80,6 +85,10 @@ ROUTES = [  # (type, test) in priority order
     ("cagr", lambda q: bool(re.search(r"\bcagr\b|compound(ed)? annual growth|annuali[sz]ed return", q, I))),
     ("income_tax", lambda q: bool(_TAX_ASK.search(q) and _TAX_CTX.search(q))),
     ("capital_gains", _capital_gains),
+    ("flat_loan", lambda q: bool(re.search(r"\d\s*%\s*['\"]?\s*flat\b|\bflat (interest )?rate\b|\bflat interest\b|\bflat basis\b", q, I)
+                                 and _PCT.search(q)
+                                 and re.search(r"\b(loan|emi|finance|financing|instal+ments?)\b", q, I))),
+    ("emergency_fund", lambda q: bool(re.search(r"\bemergency (fund|corpus|savings?|kitty)\b|आपातकालीन|अपात", q, I))),
     ("simple_interest", lambda q: bool(re.search(r"\bsimple interest\b|\bflat (interest|rate)\b|साधारण ब्याज", q, I))),
     ("sinking_fund", lambda q: bool(re.search(r"\bsinking fund\b", q, I))),
     ("ppf", lambda q: bool(re.search(r"\bppf\b|public provident fund", q, I))),
@@ -95,7 +104,7 @@ ROUTES = [  # (type, test) in priority order
     ("bond", lambda q: bool(re.search(r"\bbonds?\b(?!\s+(account|fund|funds|portfolio|mutual fund|etf)s?\b)|\bytm\b|"
                                       r"yield to maturity|\bcoupon\b", q, I))),
     ("option", lambda q: bool(re.search(r"black[- ]?scholes|\b(call|put) options?\b|\boption (price|premium)\b", q, I))),
-    ("sip_fv", lambda q: bool(re.search(r"एसआईपी|எஸ்ஐபி|\bsip\b|\b(invest|put|save|deposit)\w*\b.{0,30}\b(every|each|per|a) month\b|\bmonthly (investment|deposit)\b", q, I))),
+    ("sip_fv", lambda q: bool(_MONEY.search(q) and (_PCT.search(q) or _TERM.search(q))) and bool(re.search(r"एसआईपी|எஸ்ஐபி|\bsip\b|\b(invest|put|save|deposit)\w*\b.{0,30}\b(every|each|per|a) month\b|\bmonthly (investment|deposit)\b", q, I))),
     ("lump_fv", lambda q: bool(re.search(r"\b(grow to|grow into|be worth|maturity (value|amount)|future value|will (it|i|my money) (become|grow|have))\b", q, I)
                                or re.search(r"\bwhat will .{0,30}\b(grow|become)\b", q, I))),
     ("percent", lambda q: bool(re.search(r"\bgst\b|\d+(\.\d+)?\s*%\s*of\b|\bper ?cent of\b|\bpercentage of\b|\bdiscount of\b|\bmarkup\b", q, I))),
@@ -113,15 +122,19 @@ EXCLUSIVE = {"goal_saving": {"sip_fv", "lump_fv", "present_value"}, "present_val
              "simple_interest": {"lump_fv", "percent", "years", "loan", "emi"},
              "sinking_fund": {"goal_saving", "present_value", "lump_fv", "annuity", "sip_fv"},
              "ppf": {"lump_fv", "sip_fv", "goal_saving", "annuity", "years"},
-             "growing_annuity": {"annuity", "present_value", "lump_fv", "years", "perpetuity"}}
+             "growing_annuity": {"annuity", "present_value", "lump_fv", "years", "perpetuity"},
+             "real_return": {"bond", "tax_rules", "percent"},
+             "flat_loan": {"simple_interest", "emi", "loan", "loan_rate", "percent"},
+             "emergency_fund": {"emi", "loan", "percent", "sip_fv", "goal_saving", "lump_fv"}}
 
 REQUIRED_TOOLS = {
     "goal_saving": {"goal_saving"}, "present_value": {"tvm", "goal_saving"}, "years": {"tvm"},
-    "real_return": {"real_return"}, "effective_rate": {"effective_annual_rate"}, "emi": {"loan_emi"}, "loan": {"loan_emi"},
+    "real_return": {"real_return", "calculate"}, "effective_rate": {"effective_annual_rate"}, "emi": {"loan_emi"}, "loan": {"loan_emi"},
     "loan_rate": {"loan_emi"},
     "cagr": {"tvm"}, "npv_irr": {"npv_irr"}, "eac": {"equivalent_annual_cost", "npv_irr"}, "income_tax": {"income_tax"}, "bond": {"bond_metrics", "calculate"},
     "capital_gains": {"capital_gains"}, "tax_rules": {"tax_rules", "income_tax"},
-    "simple_interest": {"calculate"}, "sinking_fund": {"tvm", "goal_saving"}, "ppf": {"tvm"},
+    "simple_interest": {"calculate"}, "sinking_fund": {"tvm"}, "ppf": {"tvm"},
+    "flat_loan": {"calculate", "loan_emi"}, "emergency_fund": {"calculate"},
     "growing_annuity": {"perpetuity", "calculate"},
     "option": {"black_scholes"}, "project": {"project_cash_flows"}, "perpetuity": {"perpetuity", "calculate"}, "annuity": {"tvm"},
     "withdrawal": {"tvm", "loan_emi"},
@@ -142,7 +155,13 @@ HINTS = {
     "present_value": "Lump sum needed today: call tvm(solve_for='pv', annual_rate_pct=..., years=..., fv=<amount to reach>).",
     "years": ("Time to reach a multiple or a target: call tvm(solve_for='years', annual_rate_pct=..., pv=..., fv=...). For doubling use pv=1, fv=2. "
               "Never use the Rule of 72."),
-    "real_return": "Call real_return(nominal_pct=..., inflation_pct=...). Do not subtract the rates yourself.",
+    "real_return": ("Call real_return(nominal_pct=..., inflation_pct=...). Do not subtract the rates yourself. For a post-tax "
+                    "return first compute rate × (1 − tax rate) with calculate, then pass that as nominal_pct for the real post-tax return."),
+    "flat_loan": ("Flat-rate loan: interest = principal × flat rate × years on the full amount. Compute the EMI = (principal + "
+                  "interest) ÷ months with calculate. The true reducing-balance rate is loan_emi(principal=..., months=..., "
+                  "emi=<that EMI>) with annual_rate_pct left out; say the flat rate understates the real cost."),
+    "emergency_fund": ("Emergency fund: (monthly expenses + monthly EMIs and other fixed payments) × the number of months, "
+                       "computed with calculate."),
     "effective_rate": "Call effective_annual_rate(nominal_pct=..., periods_per_year=12 for monthly, 4 for quarterly, 2 for half-yearly).",
     "loan_rate": ("Loan rate: the interest rate is the UNKNOWN. Call loan_emi(principal=<amount borrowed>, months=<number of "
                   "monthly payments>, emi=<the payment>) and leave annual_rate_pct out. It returns annual_rate_pct (the APR = "
@@ -152,12 +171,14 @@ HINTS = {
     "loan": _LOAN_HINT,
     "cagr": "Call tvm(solve_for='annual_rate_pct', years=..., pv=<starting value>, fv=<ending value>).",
     "npv_irr": ("Call npv_irr(cashflows=[-investment, inflow year 1, ...], discount_rate_pct only if a rate is given), once per project. "
-                "It also returns profitability_index. For an equivalent annual cost use equivalent_annual_cost instead."),
+                "It also returns profitability_index. For an equivalent annual cost use equivalent_annual_cost instead. For two projects "
+                "call it once per project; the crossover rate is the irr of the year-by-year difference of their cash flows (one more call)."),
     "income_tax": ("Indian salary tax: call income_tax with only the figures the user gave (per-month amounts in the *_monthly "
                    "fields), regime='both' unless they chose one. Report both regimes' totals and the lower one. If the old-regime "
                    "HRA exemption needs rent paid, basic + DA or the city, say so and ask for them; never estimate tax yourself."),
     "capital_gains": ("Profit from selling shares or equity funds: call capital_gains with purchase_value, sale_value and "
-                      "holding_months exactly as given (ten months = 10, 2 years = 24; asset='equity_fund' for a mutual fund). "
+                      "holding_months exactly as given (ten months = 10, 2 years = 24; asset='equity_fund' for a mutual fund). If only the gain "
+                      "is given, pass gain=<the profit> and term='long' or 'short' (or holding_months); one call per gain. "
                       "Never use income_tax other_income for it. If the user also gives a salary, call income_tax for the salary too."),
     "simple_interest": ("Simple interest: call calculate with I = P × R × T ÷ 100 (T in years: months ÷ 12, days ÷ 365); the "
                         "amount is P + I. For a missing P, R or T rearrange the same formula inside calculate."),
@@ -190,7 +211,8 @@ HINTS = {
     "withdrawal": ("Level withdrawal from a balance: call tvm(solve_for='pmt', pv=<the balance at the start>, annual_rate_pct=..., "
                    "years=<withdrawal period>, periods_per_year=12 for monthly) with no fv. If the balance is built up first, "
                    "compute it with a tool and pass that exact result."),
-    "bond": "Call bond_metrics(face, coupon_pct, years, freq, and either ytm_pct or price).",
+    "bond": ("Call bond_metrics(face, coupon_pct, years, freq, and either ytm_pct or price). For the effective annual yield "
+             "also call effective_annual_rate(nominal_pct=<its ytm_pct>, periods_per_year=<freq>)."),
     "option": "Call black_scholes(spot, strike, years, rate_pct, vol_pct, kind).",
     "sip_fv": "The monthly amount is known: call sip_future_value(monthly=..., annual_return_pct=..., years=...).",
     "lump_fv": "Lump-sum growth: call tvm(solve_for='fv', annual_rate_pct=..., years=..., pv=<amount invested>, periods_per_year as stated).",

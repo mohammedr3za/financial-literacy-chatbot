@@ -14,7 +14,7 @@ from .config import Settings, get_settings
 from .precheck import precheck as run_precheck
 from .prompts import SYSTEM_PROMPT, context_block
 from .review import (FOOTER, _strip_math_markup, asks_for_inputs, cut_hypothetical, prune_figures, review_answer,
-                     reviewer_note, script_damaged, unsupported_figures)
+                     reviewer_note, script_damaged, unsupported_figures, unverified_numbers)
 from .tables import to_markdown
 from .tools.financial_solver import KIND as SOLVER_KIND
 from .tools.financial_solver import NO_INTEREST
@@ -216,6 +216,8 @@ _EAC_ADVICE = ("For electricity, pass power_watts, hours_per_year, price_per_kwh
                "not state with calculate first and pass its exact result. Costs are positive numbers.")
 
 
+PARTIAL_NOTE = ("I could not verify the rest of this answer with a calculator, so that part is left out. Ask about it "
+                "separately and I will work it out.")
 NOT_RELIABLE = ("I could not compute this reliably, so I am not giving a figure. Please check that the question gives every "
                 "input (amounts, rate, term) and ask again; I will work it out with the calculator.")
 _NOT_RELIABLE_LOCAL = [   # the same message, first in the user's script (SPEC 5: reply in the user's language)
@@ -248,22 +250,36 @@ def fabricated_figures(answer: str, question: str, evidence: str, tools_used: li
 
 MIN_PRUNED_CHARS = 200
 ARG_ALIASES = {"target_amount": "target", "goal": "target", "goal_amount": "target", "loan_amount": "principal",
-               "monthly_investment": "monthly", "monthly_sip": "monthly", "number_of_years": "years", "tenure_years": "years"}
+               "monthly_investment": "monthly", "monthly_sip": "monthly", "number_of_years": "years", "tenure_years": "years",
+               "life": ("years", "life_years"), "project_life": ("years", "life_years"), "useful_life": ("life_years", "years"),
+               "profit": "gain", "capital_gain": "gain", "gain_amount": "gain"}
+def _alias(name: str, fields: set) -> str | None:
+    alias = ARG_ALIASES.get(name.lower())
+    return next((a for a in ((alias,) if isinstance(alias, str) else alias or ()) if a in fields), None)
+
+
 _RATE_LIKE = re.compile(r"(?i)^(annual_)?(interest_)?(rate|return)(_pct|_percent)?$|^(interest|discount)_rate(_pct)?$")
 
 
 def normalize_args(tool: str, args: dict) -> tuple[dict, str | None]:
     """Tools built from a plain function drop unknown argument names silently (v3 lost the rate in 44 tvm calls).
     Map common aliases and a lone rate-like name onto the tool's one rate field; reject any other unknown name with a
-    suggestion. Tools with a strict schema already reject unknown names and are left alone (SPEC changelog 2026-10-17)."""
+    suggestion. Tools with a strict schema reject unknown names themselves: there only aliases are renamed (SPEC changelog
+    2026-10-17, 2026-10-19)."""
     t = TOOLS_BY_NAME.get(tool)
-    if t is None or not isinstance(args, dict) or t.args_schema.model_config.get("extra") == "forbid":
+    if t is None or not isinstance(args, dict):
         return args, None
     fields = set(t.args)
+    if t.args_schema.model_config.get("extra") == "forbid":
+        renamed = {}
+        for k, v in args.items():
+            target = k if k in fields else _alias(k, fields)
+            renamed[target if target and target not in args and target not in renamed else k] = v
+        return renamed, None
     rate_fields = [f for f in fields if re.search(r"(rate|return)_pct$", f)]
     out, unknown = {}, []
     for k, v in args.items():
-        target = k if k in fields else ARG_ALIASES.get(k.lower())
+        target = k if k in fields else _alias(k, fields)
         if target is None and _RATE_LIKE.search(k) and len(rate_fields) == 1:
             target = rate_fields[0]
         if target in fields and target not in out and (target == k or target not in args):
@@ -307,6 +323,9 @@ def without_unverified(answer: str, question: str, evidence: str, tools_used: li
     elif tools_used and not missing_tools(flags.get("calc_types", []), tools_used):
         if clean and re.search(r"\d", pruned):    # the right tool gave the key figures: drop only a stray estimate
             return pruned
+    elif tools_used and len(missing_tools(flags.get("calc_types", []), tools_used)) < len(flags.get("calc_types", [])):
+        if clean and re.search(r"\d", pruned):    # some parts verified (a bond's YTM, not its effective yield): keep them
+            return pruned.rstrip() + "\n\n" + PARTIAL_NOTE
     return not_reliable(question)
 
 
@@ -678,6 +697,8 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
                     "review": {"passed": False, "codes": result.codes, "first_draft_codes": result.codes}}
         if "hypothetical_example" in result.codes:
             answer = cut_hypothetical(answer)
+        if "unverified_helpline" in result.codes:
+            answer = prune_figures(answer, unverified_numbers(answer, evidence))
         checked = without_unverified(answer, text_of(msgs[qi]), evidence, tools_used, state["flags"])
         if checked != answer:
             answer = checked
