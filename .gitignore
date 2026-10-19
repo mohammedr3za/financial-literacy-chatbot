@@ -20,3 +20,4 @@ bench/sheets/
 bench/report/
 web/.vercel
 .vercel
+train/out_*/
