@@ -26,12 +26,20 @@ ABBREVIATIONS = {
 }
 
 
+# Everyday words for a situation vs the official terms (v4: "I was tricked on UPI" never reached the 1930 helpline pages).
+CONCEPTS = [
+    (re.compile(r"(?i)\b(tricked|cheated|scam(med)?|fraud\w*|duped|hacked|money (is |was )?gone|unauthori[sz]ed)\b|"
+                r"धोखाधड़ी|धोखा|ठगी|फ्रॉड|மோசடி|ஏமாற்ற"), "cyber fraud, report, helpline, cybercrime reporting portal"),
+]
+
+
 def expand_query(query: str) -> str:
     extra = []
     for short, full in ABBREVIATIONS.items():
         pattern = rf"\b{short}\b" if len(short) <= 3 and short[:2].isupper() else rf"(?i)\b{short}\b"
         if re.search(pattern, query) and full.lower() not in query.lower():
             extra.append(full)
+    extra += [terms for pattern, terms in CONCEPTS if pattern.search(query)]
     return query + (" (" + ", ".join(extra) + ")" if extra else "")
 
 

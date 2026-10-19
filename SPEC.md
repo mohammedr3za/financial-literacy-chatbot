@@ -369,4 +369,4 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
     - `capital_gains(term='long'|'short')` is used when only the gain and its type are given.
     - `calculate` accepts ₹/$/Rs., ×, ÷, the Unicode minus and "8%" (= 8/100). It answers an equation or an unknown letter with "use solve_equation", and a ratio "a : b" with "compute each part".
   - **Hints:** two projects with NPV and IRR (one `npv_irr` call per project; the crossover rate is the IRR of the difference) and a bond's effective annual yield (`effective_annual_rate` on the YTM).
-  - **KB:** official sources for 1930 / cybercrime.gov.in, the SCSS and PPF limits, and SEBI's F&O loss study.
+  - **KB:** official sources for 1930 / cybercrime.gov.in, the SCSS and PPF limits, and SEBI's F&O loss study. Fraud questions in everyday words ("tricked", "money is gone", धोखाधड़ी) also search for the official terms (cyber fraud, helpline, reporting portal); before this, no retrieved chunk had 1930.

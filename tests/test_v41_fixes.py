@@ -106,3 +106,10 @@ def test_a_partly_verified_calculation_keeps_the_verified_part():
               "The effective annual yield is 6.53%, from compounding twice a year.")
     out = without_unverified(answer, q, evidence, ["bond_metrics"], flags)
     assert "6.42%" in out and "6.03%" in out and "6.53" not in out and out.endswith(PARTIAL_NOTE)
+
+
+def test_fraud_questions_also_search_for_the_official_terms():
+    from finbot.kb.search import expand_query
+    assert "helpline" in expand_query("Someone tricked me on UPI and ₹18,000 is gone. Who do I call?")
+    assert "cyber fraud" in expand_query("मेरे बैंक खाते से धोखाधड़ी करके पैसे निकाल लिए गए हैं।")
+    assert "cyber fraud" not in expand_query("What is a mutual fund?")
