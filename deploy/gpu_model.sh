@@ -4,6 +4,7 @@
 #  - latest vLLM wheels need CUDA 13; Lambda's driver is CUDA 12.8 -> install NVIDIA's cuda-compat-13-0 and use its libraries
 #  - default 256 concurrent sequences OOM with Qwen3.6's attention -> --max-num-seqs 16, --max-model-len 16384
 #  - FlashInfer's sampler JIT-compiles with ninja/nvcc on first use -> VLLM_USE_FLASHINFER_SAMPLER=0 (PyTorch sampler)
+#  - vLLM 0.32.0 (2026-10-19) decodes Qwen3.6-27B about 5x slower than 0.31.0 on the A100 -> pinned to 0.31.0
 set -euo pipefail
 IP=${1:?usage: deploy/gpu_model.sh <instance-ip>}
 ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new ubuntu@"$IP" 'bash -s' <<'REMOTE'
@@ -11,7 +12,7 @@ set -e
 export PATH=$HOME/.local/bin:$PATH
 command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
 [ -d ~/vllm-env ] || uv venv -q ~/vllm-env --python 3.12
-. ~/vllm-env/bin/activate && uv pip install -q vllm hf_transfer ninja
+. ~/vllm-env/bin/activate && uv pip install -q "vllm==0.31.0" hf_transfer ninja
 if [ ! -d /usr/local/cuda-13.0/compat ]; then
   cd /tmp && wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
   sudo dpkg -i cuda-keyring_1.1-1_all.deb >/dev/null && sudo apt-get update -qq >/dev/null 2>&1
