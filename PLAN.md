@@ -229,3 +229,11 @@ Caution: any fix must be checked on *new* problems, not these 30, or the score m
   - **M8 acceptance not met:** the test bank misses 85% by 2 questions, CA by 6 and McGraw by 5; concept and held-out are each 1 lower.
   - Remaining causes: 17 blank fallbacks; 16 answers with no tool call; tool-argument errors (project_cash_flows "life", npv_irr "cashflows2", capital_gains prices, calculate syntax).
   - Report: results/lambda_v4_eval/v4_report.md. All Lambda GPUs terminated.
+- 2026-10-19 v4.1 retest: the same finbot-8b-v4 GGUF on the v4.1 code and KB (commits d1c9990, 6bc4c7b, b756ffd); A100, Ollama, same sets.
+  - Test bank 142/159 (89%; v4 84%). CA 78/97 (80%; v4 78%). McGraw 18/34 (v4 19). Question bank 8/11. Held-out 20/20.
+  - Concept 27/27, safety 16/16, Indian languages 10/10, regulatory 21/22.
+  - Against v4: 22 questions fixed, 9 broke. All 9 were routed the same as in v4, so they reflect run-to-run variation of the model, not the code.
+  - The fraud question now answers 1930 [S1]; v4 invented a number. The "guaranteed 2% a month" question gets a clear warning; v4 gave a blank.
+  - **M8 acceptance still not met:** CA is 5 questions short of 85%, McGraw 6 short of 24/34.
+  - Caveat: the fixes were found from v4's failures on these sets, so this retest is optimistic.
+  - Report: results/lambda_v41_eval/v41_report.md. All Lambda GPUs terminated.
