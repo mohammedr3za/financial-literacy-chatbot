@@ -237,3 +237,17 @@ Caution: any fix must be checked on *new* problems, not these 30, or the score m
   - **M8 acceptance still not met:** CA is 5 questions short of 85%, McGraw 6 short of 24/34.
   - Caveat: the fixes were found from v4's failures on these sets, so this retest is optimistic.
   - Report: results/lambda_v41_eval/v41_report.md. All Lambda GPUs terminated.
+- 2026-10-20 v5 evaluation (A100). Training: 2,189 examples (248 new), eval_loss 0.34.
+  - Ollama Q5_K_M, v5 vs v4.1:
+    - test bank 138/159 (87%) vs 142 (89%);
+    - CA 69/97 (71%) vs 78 (80%), more skipped tools and 13 blank fallbacks;
+    - McGraw 18/34 vs 18;
+    - question bank 9/11 vs 8.
+  - **Fresh blind set** (100 new questions, never used for tuning or training), v4.1 code on every row:
+    - v4 on Ollama 63%;
+    - v5 on Ollama 65%;
+    - **v5 on vLLM (bf16 LoRA, forced tool calls) 72%**, median 14 s.
+  - v5 on vLLM, older sets: test bank 144/159 (91%), CA 77/97 (79%, 2 blank fallbacks).
+  - **Reading:** the extra training data barely changed the 8B on Ollama. The gain comes from serving it on vLLM with forced tool calls. v4 on vLLM was not tested, so part of the gain may come from the serving alone.
+  - **M8 acceptance still not met:** CA is below 85% on every configuration.
+  - Reports: results/lambda_v5_eval/{evals,evals_vllm}/v5_report.md. All Lambda GPUs terminated.
