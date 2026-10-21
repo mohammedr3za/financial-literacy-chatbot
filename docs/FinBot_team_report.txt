@@ -1,0 +1,439 @@
+FINBOT: PROJECT REPORT FOR THE TEAM
+Exhibition: "Can you trust a financial chatbot?"
+==========================================================================================
+
+Written 21 October 2026. Every number below was measured on FinBot between 16 and 21 October
+2026, from the result files listed in section 12.
+
+Repo:    github.com/mohammedr3za/finbot (SPEC.md is the source of truth; PLAN.md has the evidence log)
+Poster:  results/poster/FinBot_Poster.pdf (A1). Shared separately, not in git (it quotes test questions).
+
+
+0. THE SHORT VERSION
+------------------------------------------------------------------------------------------
+
+- FinBot is a finance chatbot for India that shows its working.
+  - Every number comes from a calculator tool.
+  - Every rule comes with an official source.
+  - It refuses scams and risky advice.
+- Two models run inside the same FinBot system:
+  - The SMALL MODEL is Qwen3-8B, fine-tuned by us. It is a 5.9 GB file and runs offline on a 16 GB MacBook.
+  - The BIG MODEL is Qwen3.6-27B, used as it comes. It needs a rented GPU.
+- CA Foundation (97 ICAI Business Mathematics questions):
+  - The small model scores 79-80%. The big model scores 95%.
+  - ICAI's pass mark is 40% per paper; a distinction is 70%.
+- Blind test (100 questions nobody looked at while building): small model 72, big model 90.
+- Safety: the small model handled 26 out of 26 scam and risky-advice questions safely.
+- Cost per 1,000 answers:
+  - The small model costs Rs 5 on the laptop and Rs 81 on a rented GPU.
+  - Claude Opus 5.5 would cost Rs 2,347 and GPT-5.6 Sol Rs 2,608 for the same work.
+  - The cheapest cloud models (Claude Haiku 5.5 at Rs 70, GPT-5.6 Luna at Rs 140) cost about the same as our GPU.
+- Speed: the small model typically answers in 12 s on a GPU and 66 s on the laptop. The big model takes 18 s.
+- Build:
+  - 16-21 Oct, with 99 commits and 548 automated tests.
+  - The final training run took 4.0 h on one A100 (about Rs 750).
+  - GPU rental for versions 4 and 5 was about $60, and about half of that was wasted on idle GPUs.
+- Not yet tested: ChatGPT and Claude on the same questions. We compare them on PRICE ONLY.
+
+
+1. WHAT FINBOT IS
+------------------------------------------------------------------------------------------
+
+FinBot is the team's reference chatbot for the exhibition. It shows the design choices that
+make a financial chatbot trustworthy. It does not claim that a small model is smarter than a
+bank's chatbot (SPEC wording).
+
+What it does:
+  - Calculations: EMI, SIP, FD/RD, tax, capital gains, bonds, NPV/IRR, ratios and so on.
+    All of them are done by 21 deterministic calculator tools, never by the model.
+  - Rules and products: it searches 3,954 passages and cites them as [S1], [S2]. They come
+    from 28 official documents (RBI, SEBI, PIB, NSI, IRDAI, AMFI, DICGC, NCFE, NPS and the
+    Income Tax department) and 2 OpenStax textbooks.
+  - Safety: it refuses stock tips, "guaranteed" returns, OTP or password requests, and
+    anything it cannot verify.
+  - Languages: English, Hindi, Tamil and Hinglish, with the same calculators underneath.
+
+What it cannot do: see a customer's account. It does not check balances, block cards,
+make payments or show a CIBIL score.
+
+
+2. HOW IT ANSWERS A QUESTION
+------------------------------------------------------------------------------------------
+
+  Your question
+     -> Pre-check     turns "Rs 20 lakh" into 2,000,000; hides PAN and Aadhaar numbers;
+                      picks the right kind of calculation
+     -> Search        finds the 3 most relevant passages in the official documents
+     -> Model plans   the 8B or 27B decides which calculator to call and with what numbers
+     -> Calculator    21 exact tools return the numbers (and year-wise tables)
+     -> Reviewer      checks that every figure in the draft came from a calculator result
+                      and that phone numbers appear in a source
+     -> Answer        with sources and working
+
+If the reviewer finds a figure it can't trace, the model gets one rewrite. If that also
+fails, the unverified part is removed or the answer is marked "not reliable".
+
+Real example: an early version invented a fraud helpline number. The reviewer now blocks
+any phone number that isn't in a source, and the bot gives 1930 from the government notice.
+
+
+3. THE TWO MODELS, IN PLAIN WORDS
+------------------------------------------------------------------------------------------
+
+"8B" and "27B" mean 8 and 27 billion parameters, the learned numbers inside a model.
+More parameters usually means better reasoning, but more memory and computing power.
+
+  SMALL MODEL  Qwen3-8B (open weights, Apache 2.0), fine-tuned by us with LoRA.
+               Q5_K_M file: 5.85 GB. Runs on the MacBook (M5, 16 GB) with Ollama, offline.
+  BIG MODEL    Qwen3.6-27B (FP8), used as it comes. Its weights alone need about 28 GB of
+               GPU memory, so it runs on a rented Lambda A100 40 GB with vLLM 0.31.0.
+
+TEACHER AND STUDENT (how the small model was trained, also called "distillation"):
+  1. We wrote practice questions where the small model was weak (455 in the last round).
+  2. The big model (the "teacher") answered them inside the full FinBot system.
+  3. Our code checked each answer against a correct value. 359 were kept and 96 were thrown away.
+  4. The small model (the "student") was fine-tuned on all 2,189 checked examples.
+     It learned the teacher's habits: which calculator to use, how to set out the working
+     and when to refuse.
+
+
+4. THE TEST SETS
+------------------------------------------------------------------------------------------
+
+  Set                  Size  What it is
+  -------------------  ----  -------------------------------------------------------------
+  CA Foundation          97  ICAI Business Mathematics questions (BoS suggested answers and
+                             question banks), marked against ICAI's official answers.
+                             FinBot gets no answer options.
+  Blind (fresh) set     100  New questions written by a separate helper after v4. Nobody
+                             reads them, and nothing is tuned on them. This is the honest score.
+  Test bank             159  Our own mixed set: Indian and textbook maths, concepts, rules,
+                             safety and languages.
+  McGraw-Hill            34  Course practice problems (184 numeric parts), graded at 1%.
+                             Private: never committed, never used for training.
+  Held-out calcs         20  Calculation questions kept out of all training.
+  Team question bank     83  The team's questions. 11 have a checkable answer.
+
+RULES (please keep to them):
+  - All of these are TEST ONLY. Never train on them, and never paste them into training data.
+  - Training data is checked against the test sets for near-copies before each fine-tune.
+  - Never read the blind set's questions or tune anything on them, or it stops being blind.
+  - Never commit books, PDFs, kb/raw, kb/index, .env, passwords or fine-tune data.
+  - Push only to the mohammedr3za GitHub.
+  - CAVEAT: the v4.1 code fixes were found from test-bank and CA failures, so those two
+    scores are optimistic. Quote the blind set when someone asks "how good is it really".
+
+
+5. RESULTS
+------------------------------------------------------------------------------------------
+
+5.1 CA Foundation, 97 ICAI questions (pass 40%, distinction 70%)
+
+  Setup                                   Score         Median time
+  --------------------------------------  ------------  -----------
+  Small model v3, GPU                     72/97  (74%)  15 s
+  Small model v4, GPU                     76/97  (78%)  21 s
+  Small model v4 + v4.1 code fixes, GPU   78/97  (80%)  20 s
+  Small model v5, Ollama on GPU           69/97  (71%)  22 s
+  Small model v5, vLLM on GPU             77/97  (79%)  12 s
+  Small model v4, MacBook, offline        78/97  (80%)  see 6
+  Big model 27B, GPU                      92/97  (95%)  20 s
+
+  - The laptop scores exactly the same as the same model on a GPU. Running offline costs
+    speed, not accuracy.
+  - Why v5 dropped on Ollama: it skipped tools more often and gave 13 blank fallbacks.
+    Served on vLLM with forced tool calls, it had only 2.
+  - The small model's 20 misses (v5, vLLM):
+      6  a calculator call failed (bad arguments)
+      6  the calculator ran but the method or the numbers were wrong
+      5  its own reviewer blocked unverified figures ("not sure" instead of a guess)
+      3  it never called the calculator
+  - Example the poster uses: "In how many years will money double at 5% compound interest?"
+    ICAI's multiple-choice key says 14.3 years, which is the nearest option. FinBot's
+    calculator says 14.21 years (exact: ln 2 / ln 1.05 = 14.2067).
+
+5.2 Blind test, 100 new questions
+
+  Kind of question             Small v4     Small v5     Small v5    Big 27B
+                               (Ollama)     (Ollama)     (vLLM)      (vLLM)
+  ---------------------------  ----------   ----------   ---------   -------
+  CA-style maths (20)              9           10           14         20
+  Indian money maths (30)         15           17           19         27
+  Textbook finance (15)           10            9           10         13
+  RBI, SEBI, tax rules (12)        7            7            7          8
+  Scams, risky advice (10)        10           10           10          9
+  Concepts (6)                     6            6            5          6
+  Hindi, Tamil, Hinglish (7)       6            6            7          7
+  ---------------------------  ----------   ----------   ---------   -------
+  TOTAL (100)                     63           65           72         90
+  Median time                    18 s         22 s         14 s       27 s
+
+  - The extra training in v5 barely moved the small model on Ollama (63 -> 65). The jump to
+    72 came from serving it on vLLM with forced tool calls. v4 was never tried on vLLM, so
+    part of that gain may come from the serving alone.
+  - The small model is as safe as the big one (10/10 against 9/10). It loses on harder
+    maths, not on honesty.
+  - Rules are the weakest kind for both models (7 and 8 of 12).
+
+5.3 Test bank, 159 questions
+
+  Setup                       Total           India  Textbook  Concept  Rules  Safety  Lang
+                                              (48)   (36)      (27)     (22)   (16)    (10)
+  --------------------------  --------------  -----  --------  -------  -----  ------  ----
+  Small v4, Ollama            133/159 (84%)
+  Small v4 + v4.1 code fixes  142/159 (89%)    40      28        27       21     16     10
+  Small v5, Ollama            138/159 (87%)
+  Small v5, vLLM              144/159 (91%)    41      29        27       22     16      9
+  Big 27B                     151/159 (95%)    48      32        27       20     15      9
+
+5.4 McGraw-Hill course problems, 34 problems, 184 parts (1% tolerance)
+
+  Setup                           Problems fully right   Parts right
+  ------------------------------  --------------------   -----------
+  Qwen3-8B base (no fine-tune)          14/34              79/184
+  Small v3                              20/34             102/184
+  Small v4                              19/34              92/184
+  Small v4 + v4.1 code fixes            18/34              88/184
+  Small v5                              18/34              78/184
+  Big 27B (17 Oct code)                 32/34             170/184
+
+5.5 Held-out calculations (20) and team question bank (11 graded)
+
+  Held-out:  base 8B 18/20 · v3 20/20 · v4 19/20 · v4.1 20/20 · v5 19/20 · 27B 20/20
+  Question bank (graded items):  v4 7/11 · v4.1 8/11 · v5 9/11
+
+5.6 Safety at a glance
+  Small v5: 16/16 on the test bank and 10/10 on the blind set, so 26/26.
+  Big 27B: 15/16 and 9/10.
+  Covered: OTP/KYC scams, "guaranteed" monthly returns, Telegram tip groups, loan apps asking
+  for contacts, UPI refund tricks, passwords and net-banking IDs, CIBIL score requests with a
+  PAN, risky loans for crypto, "SEBI-approved" trading apps, and stock tips.
+
+5.7 Milestone status
+  M8 (fine-tune acceptance) needs 85% on the test bank and on CA, and 24/34 on McGraw.
+  - Test bank: met (91% on vLLM).
+  - CA: not met (best 80%).
+  - McGraw: not met (best fine-tune 20/34; v5 gets 18).
+
+
+6. SPEED
+------------------------------------------------------------------------------------------
+
+Timed on the same 37 CA questions (the ones the laptop answered while awake and plugged in):
+
+  Setup                                    Typical (median)   9 in 10 within
+  ---------------------------------------  ----------------   --------------
+  Small model, A100 GPU (~10 at a time)          12 s               24 s
+  Big model, A100 GPU                            18 s               47 s
+  Small model, MacBook M5 (one at a time)        66 s              143 s
+
+  - CORRECTION: the laptop's first 60 CA answers ran while the Mac was asleep with its lid
+    closed, on battery. That inflated their times (the median over all 97 was 74 s), but not
+    their marks. See lesson 5 in section 8.
+  - Why FinBot is slower than ChatGPT's first words: it doesn't stream a guess. It plans,
+    calls the calculator, checks every figure and rewrites once if a check fails. Each
+    answer takes 2 model calls, or 4 for heavy ones.
+  - GPU throughput (measured): small model 2,330 answers an hour, big model 766 an hour.
+
+
+7. COST
+------------------------------------------------------------------------------------------
+
+7.1 Cost per 1,000 answers, for the same FinBot work on each option
+
+  Option                                  US$       Rs     Rs per answer
+  -------------------------------------  -------   ------  -------------
+  FinBot-8B on the MacBook (electricity)    0.05        5     0.005
+  Claude Haiku 5.5                          0.74       70     0.07
+  FinBot-8B on a rented A100                0.85       81     0.08
+  OpenAI GPT-5.6 Luna                       1.48      140     0.14
+  FinBot-27B on a rented A100               2.60      245     0.25
+  Claude Sonnet 5.5                        12.43    1,174     1.17
+  OpenAI GPT-5.6 Terra                     14.81    1,398     1.40
+  Claude Opus 5.5                          24.86    2,347     2.35
+  OpenAI GPT-5.6 Sol (flagship)            27.62    2,608     2.61
+  OpenAI GPT-5.5                           37.02    3,495     3.49
+  Claude Fable 5.1                         56.18    5,304     5.30
+
+  What it means:
+  - Opus 5.5 and GPT-5.6 Sol cost about 30x our small model on a rented GPU.
+  - The cheapest cloud models (Haiku 5.5 and GPT-5.6 Luna) cost about the same as renting
+    a GPU. FinBot's real advantages are that it can run on hardware you already own
+    (Rs 5 per 1,000 on the laptop) and that the question never leaves the room.
+  - Cloud prices above INCLUDE prompt caching. Without it, Opus 5.5 or GPT-5.6 Sol would
+    cost about Rs 10,700 per 1,000 answers.
+  - This is price only. ChatGPT's and Claude's ACCURACY on our questions was not tested.
+
+7.2 Subscriptions (India, per month)
+  ChatGPT Go Rs 399 · ChatGPT Plus Rs 1,999 · Claude Pro about Rs 2,000 (annual billing)
+  - One month of ChatGPT Plus = 10.6 hours of the A100 = about 25,000 FinBot-8B answers.
+  - An 8-hour exhibition day on the A100 costs about Rs 1,500, however many visitors come.
+
+7.3 At a bank's scale (estimates from docs/cost_and_value.md)
+  - An 8B on Indian GPUs costs about Rs 0.08-0.10 per answer.
+  - A call-centre call costs about Rs 45-55 (a vendor estimate; no official Indian figure).
+  - Including staff, redundancy and audits, a finance helper in SBI's YONO app would cost
+    about Rs 2.4-3.3 per answer. It pays for itself if about 1 answer in 15-20 replaces a
+    phone call.
+  - Indian rules favour self-hosting:
+    - RBI's payment-data storage rule (2018) requires payment data to stay in India.
+    - The DPDP Act 2023 can restrict sending personal data abroad.
+    - RBI's FREE-AI report (2025) asks that sensitive data stay "under the control of the
+      institution".
+  - That document's throughput figures were estimates. We have since measured 2,330
+    answers an hour for the 8B on an A100.
+
+7.4 How the cost numbers were worked out
+  - Token use (from the vLLM server log of 356 answers):
+    - 25,909 input tokens per answer, 92.2% of them repeated instructions served from cache;
+      2,021 new tokens per answer.
+    - 499 output tokens per answer.
+  - Cloud cost = new tokens x input price + repeated tokens x cache price + output x output
+    price. Claude's new input is billed at the 5-minute cache-write price, 1.25x its input
+    price.
+  - Prices are list prices on 21 Oct 2026 (platform.claude.com and developers.openai.com):
+
+      Model              Input   Cache hit   Output   (US$ per million tokens)
+      Claude Haiku 5.5   0.10    0.01        0.50
+      Claude Sonnet 5.5  2.00    0.10        10
+      Claude Opus 5.5    4.00    0.20        20
+      GPT-5.6 Luna       0.20    0.02        1.20
+      GPT-5.6 Sol        4.00    0.40        20
+
+  - Rented GPU: Lambda A100 40 GB at $1.99 an hour, divided by the measured answers per hour.
+  - Laptop: about 35 W while answering (measured with ioreg; 26-39 W), times the 66 s median,
+    at a household tariff of Rs 7/kWh.
+  - Exchange rate: Rs 94.4 per US$ (Wise mid-market, 21 Oct 2026).
+
+
+8. HOW WE BUILT IT
+------------------------------------------------------------------------------------------
+
+Timeline
+  16 Oct  Spec approved; calculator tools, safe maths engine, search over official documents.
+  17 Oct  v2 and v3 fine-tunes (first teacher data from the 27B). v3: CA 74%, McGraw 20/34.
+  18 Oct  v4: more teacher data aimed at v3's gaps. Test bank 84%, CA 78%, McGraw 19/34.
+  19 Oct  v4.1: code fixes only, same model. New routes for flat-rate loans, emergency funds,
+          post-tax real returns and "can I still claim"; the helpline check; fraud search
+          terms; 4 new official documents (PIB 1930, NSI SCSS/PPF, SEBI F&O study).
+          Test bank 89%, CA 80%.
+  19-20   Blind set written. v5: 455 new practice questions, 359 kept; 2,189 examples in total;
+          trained 4.0 h on one A100. On vLLM: test bank 91%, CA 79%, blind 72/100.
+  21 Oct  Big model on the blind set: 90/100. Laptop CA run: 78/97. Poster built.
+
+Training run (v5)
+  Base Qwen3-8B · LoRA rank 32 · max sequence length 12,288 · 2 epochs · eval loss 0.34
+  · 14,440 s (4.0 h) on one A100 40 GB · exported to a 5.85 GB Q5_K_M GGUF for Ollama.
+
+GPU spend (from the run logs; Lambda has no billing API)
+  v4:          teacher $20 (about $17 of it idle) + train and eval $8.5 + retest $2.7  = about $31
+  v5:          failed attempt $5 + teacher $4.3 + train and eval $16.3 (about $6 stalled) = about $26
+  Blind test:  big model on an A100, $3 (about $2.2 idle)
+  Total:       about $60 (Rs 5,600), of which about $30 paid for idle GPUs.
+  (Earlier rounds and exhibition serving are not included.)
+
+Lessons learned (please follow these for any GPU run)
+  1. Every rented GPU must shut itself down: at the end, on failure, and from a watchdog
+     timer. One idle teacher box burned 9 hours.
+  2. Never hold one SSH session open through a long remote step. Run it detached on the box,
+     write status markers, and poll with short SSH calls.
+  3. Pin vLLM 0.31.0. Version 0.32.0 decodes the 27B about 5x slower on an A100.
+  4. On a 40 GB GPU, don't load two 8B models in Ollama with 8 parallel slots each; they
+     thrash and hang. Use 4 slots.
+  5. Keep the MacBook on its charger during unattended runs. With the lid closed on battery
+     it sleeps even under caffeinate. The monitor and watchdog then stall while the GPU
+     keeps billing.
+
+
+9. WHERE IT STILL FAILS
+------------------------------------------------------------------------------------------
+
+  - Rules: 7 of 12 (small) and 8 of 12 (big) on the blind set. Rules change, and the bot only
+    knows the documents it was given.
+  - Harder maths: the small model gets about 1 CA question in 5 wrong (see the misses in 5.1).
+  - It is slow on a laptop: over a minute per answer.
+  - Our tests are not the official exam: 97 practice questions from one paper, open answer.
+  - It cannot see accounts or do transactions.
+  - The CA questions come from ICAI's public material, which big models may have seen in
+    pretraining. That applies to the 27B and to ChatGPT/Claude as much as to us. Our own
+    fine-tuning data was checked for overlap.
+
+
+10. WHAT WE CAN AND CANNOT CLAIM
+------------------------------------------------------------------------------------------
+
+  SAY   "79-80% on 97 ICAI CA Foundation Business Mathematics practice questions"
+  NOT   "FinBot passed the CA exam" (one paper's practice questions, not the four-paper exam)
+
+  SAY   "Claude Opus 5.5 and GPT-5.6 Sol would cost about 30x more for the same work"
+  NOT   "better than ChatGPT" (their accuracy on our questions was not measured)
+
+  SAY   "as cheap as the cheapest cloud AI, and your data stays with you"
+  NOT   "cheaper than any AI" (Claude Haiku 5.5 costs about the same as our rented GPU)
+
+  SAY   "the small model is as safe as the big one on our scam questions"
+  NOT   "it never makes mistakes"
+
+
+11. OPEN ITEMS BEFORE THE EXHIBITION
+------------------------------------------------------------------------------------------
+
+  1. Confirm the QR code address on the poster: finbot-blond.vercel.app.
+  2. Add the visitor notice on the site before the public uses it. Chats are logged
+     (SPEC 7.4), and the spec requires a notice before any public use.
+  3. Add team names to the poster byline if wanted. It currently says "Made by the
+     exhibition team".
+  4. Decide what runs at the booth:
+       big model on a rented A100     best answers, about Rs 1,500 per 8-hour day
+       small model on a rented GPU    cheaper per answer, 72 vs 90 on the blind test
+       small model on the MacBook     free and offline, but about a minute per answer
+  5. Optional: test ChatGPT and Claude on the same 97 CA questions. It needs API keys and
+     about $5-10, or someone can paste 20 questions into the free apps by hand.
+  6. M8 is still open: CA is at 80% against 85%, and McGraw at 18-20 against 24/34.
+  7. Tidy docs/cost_and_value.md. It has uncommitted edits from an earlier session and says
+     16 tools; there are now 21.
+
+
+12. WHERE THINGS LIVE
+------------------------------------------------------------------------------------------
+
+  In git (github.com/mohammedr3za/finbot)
+    SPEC.md                    scope, architecture, rules, changelog
+    PLAN.md                    milestones and the evidence log (every result above)
+    docs/poster.md             poster content brief
+    docs/cost_and_value.md     bank-scale cost model and regulation
+    docs/FinBot_team_report.txt   this file
+    src/finbot/                the app (LangGraph pipeline, tools, review, search)
+    tests/                     548 tests (run: uv run pytest)
+
+  Not in git (on the project Mac)
+    results/poster/            FinBot_Poster.pdf / .html, build_poster.py, examples.md
+    results/lambda_v5_eval/    v5 results (Ollama and vLLM) and the vLLM server log
+    results/lambda_fresh27b/   big model on the blind set
+    results/laptop_ca/         MacBook CA run
+    results/ca_foundation/     CA questions (with ICAI source links) and the 27B CA run
+    results/fresh_v5/          blind set (do not read)
+    train/out_v5/              v5 model files (GGUF, LoRA) and the training log
+    kb/raw, kb/index           source documents and the search index
+
+  Rebuild the poster after new results:
+    uv run --no-project --with qrcode python -I results/poster/build_poster.py
+  Then open the HTML in Chrome, choose Print, then Save as PDF (it picks A1 automatically).
+
+
+13. SOURCES
+------------------------------------------------------------------------------------------
+
+  Claude API prices      https://platform.claude.com/docs/en/about-claude/pricing
+  OpenAI API prices      https://developers.openai.com/api/docs/pricing
+  GPU price              Lambda A100 40 GB, $1.99/h (Lambda API, 21 Oct 2026)
+  ChatGPT India prices   https://www.bloomberg.com/news/articles/2025-08-19/openai-rolls-out-5-chatgpt-go-plan-exclusively-for-india
+                         https://www.outlookbusiness.com/artificial-intelligence/openai-rolls-out-low-cost-chatgpt-go-for-indian-users-check-details-here
+  Claude India prices    https://www.outlookbusiness.com/deeptech/claude-pro-now-costs-2000-in-india-as-anthropic-localises-subscription-pricing
+                         https://www.freepressjournal.in/tech/anthropic-introduces-indian-prices-for-claude-ai-subscriptions-heres-how-much-it-costs
+  CA pass rules          https://finance.careers360.com/articles/ca-foundation-and-intermediate-jan-2026-passing-marks
+  CA questions           ICAI Board of Studies (resource.cdn.icai.org, boslive.icai.org); each
+                         question's URL is in results/ca_foundation/questions.jsonl
+  Exchange rate          https://wise.com/us/currency-converter/usd-to-inr-rate
+  Electricity tariff     https://www.globalpetrolprices.com/India/electricity_prices/
+  Bank-scale and regulation   docs/cost_and_value.md (its own source list)
