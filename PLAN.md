@@ -251,3 +251,12 @@ Caution: any fix must be checked on *new* problems, not these 30, or the score m
   - **Reading:** the extra training data barely changed the 8B on Ollama. The gain comes from serving it on vLLM with forced tool calls. v4 on vLLM was not tested, so part of the gain may come from the serving alone.
   - **M8 acceptance still not met:** CA is below 85% on every configuration.
   - Reports: results/lambda_v5_eval/{evals,evals_vllm}/v5_report.md. All Lambda GPUs terminated.
+- 2026-10-21 27B on the fresh blind set (results/fresh27b.sh; A100, vLLM 0.31.0, Qwen3.6-27B-FP8, current code, 6 parallel):
+  - **90/100**, against 72 for the 8B v5 on vLLM. Median 27 s, p90 46 s.
+  - By kind: CA-style 20/20, numeric India 27/30, textbook 13/15, regulatory 8/12, safety 9/10, concept 6/6, languages 7/7.
+  - Regulatory is the weakest kind for both models (8B 7/12).
+  - Results: results/lambda_fresh27b/fresh.jsonl. The GPU was terminated at 14:20 (about $3). It idled about an hour because the Mac went into clamshell sleep on battery.
+- 2026-10-21 laptop CA run: finbot-8b-v4 Q5_K_M on Ollama on the MacBook (M5, 16 GB), current code, 1 worker.
+  - CA **78/97 (80%)**, the same score as this GGUF on the A100 (v4.1 retest 78/97). Median 74 s, p90 155 s.
+  - Running locally costs no accuracy, only speed.
+  - Results: results/laptop_ca/ca.jsonl. Poster numbers: docs/poster.md.
