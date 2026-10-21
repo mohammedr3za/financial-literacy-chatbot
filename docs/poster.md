@@ -25,8 +25,8 @@ Exhibition theme: **"Can you trust a financial chatbot?"** The poster's answer: 
 | Number | Label | Small print |
 |---|---|---|
 | **79%** | FinBot-8B on ICAI CA Foundation Business Mathematics questions (77/97). The 27B scores **95%** (92/97). | ICAI pass mark 40% per paper; distinction 70%. Asked without the answer options. |
-| **₹82 vs ₹2,300+** | Cost per 1,000 answers: FinBot-8B on a rented GPU vs the same work on Claude Opus 5.5 / GPT-5.6 Sol | ₹5 per 1,000 on a MacBook (electricity only) |
-| **13.5 s** | Median time per answer on one GPU | 74 s on a MacBook, offline, with the same 80% score |
+| **₹81 vs ₹2,300+** | Cost per 1,000 answers: FinBot-8B on a rented GPU vs the same work on Claude Opus 5.5 / GPT-5.6 Sol | ₹5 per 1,000 on a MacBook (electricity only) |
+| **12 s** | Median time per answer on one GPU | 66 s on a MacBook, offline, with the same 80% score |
 | **26/26** | Scam and risky-advice questions handled safely by the 8B | OTP fraud, "guaranteed" returns, Telegram tips, loan apps |
 
 ## 3. Panels (suggested: 3 columns × 3 rows on A1)
@@ -42,7 +42,7 @@ Exhibition theme: **"Can you trust a financial chatbot?"** The poster's answer: 
 | FinBot-8B v3 | 72/97 (74%) | 15 s |
 | FinBot-8B v4 | 78/97 (80%) | 20 s |
 | **FinBot-8B v5 on a GPU** | **77/97 (79%)** | **12 s** |
-| FinBot-8B v4 on the MacBook (offline) | **78/97 (80%)**, the same as on the GPU | 74 s |
+| FinBot-8B v4 on the MacBook (offline) | **78/97 (80%)**, the same as on the GPU | 66 s (timed while awake; see Panel D) |
 | FinBot-27B (exhibition model) | **92/97 (95%)** | 20 s |
 
 - **Story line:** "Above the distinction line, but still wrong about 1 time in 5. That's why it shows its working."
@@ -75,30 +75,36 @@ Exhibition theme: **"Can you trust a financial chatbot?"** The poster's answer: 
 | Option | ₹ per 1,000 answers |
 |---|---|
 | FinBot-8B on a MacBook (electricity, ₹7/kWh) | **₹5** |
-| Claude Haiku 5.5 (cheapest Claude) | ₹69 |
-| **FinBot-8B on a rented A100 GPU** | **₹82** |
-| OpenAI GPT-5.6 Luna (cheapest GPT) | ₹139 |
-| FinBot-27B on a rented A100 GPU | ₹250 |
-| Claude Sonnet 5.5 | ₹1,168 |
-| OpenAI GPT-5.6 Terra | ₹1,387 |
-| Claude Opus 5.5 | ₹2,336 |
-| OpenAI GPT-5.6 Sol (flagship) | ₹2,585 |
-| OpenAI GPT-5.5 | ₹3,467 |
+| Claude Haiku 5.5 (cheapest Claude) | ₹70 |
+| **FinBot-8B on a rented A100 GPU** | **₹81** |
+| OpenAI GPT-5.6 Luna (cheapest GPT) | ₹140 |
+| FinBot-27B on a rented A100 GPU | ₹245 |
+| Claude Sonnet 5.5 | ₹1,174 |
+| OpenAI GPT-5.6 Terra | ₹1,398 |
+| Claude Opus 5.5 | ₹2,347 |
+| OpenAI GPT-5.6 Sol (flagship) | ₹2,608 |
+| OpenAI GPT-5.5 | ₹3,495 |
+
+Recomputed from the vLLM logs:
+- **8B:** 2,021 new input tokens per answer (92.2% of the 25,909 total are repeated) and 499 output tokens. It serves 2,330 answers an hour.
+- **27B:** 766 answers an hour.
+- An earlier draft used 2,289 answers an hour, which gave ₹82 for the 8B and ₹250 for the 27B.
 
 - **Honest point:** the cheapest cloud models now cost about the same as renting a GPU. FinBot wins on two other things:
   1. **Privacy:** on a laptop or a bank's own GPU, no question leaves the building. RBI's data-storage rules and the DPDP Act favour this.
   2. **Control:** every number comes from our own calculator, which can be audited.
 - **Subscriptions:**
   - ChatGPT Go costs ₹399 a month, ChatGPT Plus ₹1,999 and Claude Pro about ₹2,000.
-  - One month of ChatGPT Plus pays for about 10.6 hours of the A100, which is about **24,000 FinBot-8B answers**.
+  - One month of ChatGPT Plus pays for about 10.6 hours of the A100, which is about **25,000 FinBot-8B answers**.
   - A full exhibition day on the A100 (8 h) costs about ₹1,500.
 - **At bank scale** (from `docs/cost_and_value.md`): about **₹0.08–0.10 per answer** on Indian GPUs. A call-centre call costs about ₹45–55 (a vendor estimate).
 
 ### Panel D: "How fast?"
-- **Measured times:**
-  - 8B on one GPU: **median 13.5 s**, p90 34 s, with about 10 answers at a time.
-  - 27B: median 27 s.
-  - MacBook M5 (16 GB, offline): median 74 s, p90 155 s. It scores the same as on the GPU (78/97 on CA), only slower.
+- **Measured times** (the same 37 CA questions, timed while the laptop was awake and plugged in):
+  - 8B on one GPU: **median 12 s**, 9 in 10 within 24 s, with about 10 answers at a time.
+  - 27B: median 18 s, 9 in 10 within 47 s.
+  - MacBook M5 (16 GB, offline): median 66 s, 9 in 10 within 143 s. It scores the same as on the GPU (78/97 on CA), only slower.
+- ⚠️ **Correction:** the laptop's first 60 answers ran while the Mac was asleep with its lid closed. That inflated their times: the median over all 97 was 74 s and the p90 196 s. Their marks are unaffected.
 - **Why it's slower than ChatGPT's first words:** FinBot does not stream a guess. Each answer goes through:
   1. a plan;
   2. calculator calls;
@@ -119,7 +125,7 @@ Callouts:
 ### Panel F: "How we built it" (timeline)
 - **Base:** Qwen3-8B, open weights (Apache 2.0). Fine-tuned with LoRA, a small add-on layer, so the base model stays unchanged.
 - **Teacher:** a bigger open model (Qwen3.6-27B) wrote worked examples. **A calculator checked each one, and wrong ones were thrown away.** Of the 455 newest examples, 359 were kept.
-- **Training data:** 2,189 examples. Training took **about 4 hours on one A100 GPU (about ₹800)**.
+- **Training data:** 2,189 examples. Training took **4.0 hours on one A100 GPU (about ₹750)**.
 - **Model file:** 5.9 GB. It runs on a 16 GB laptop.
 - **Versions:**
   - v3 → v5 in 5 days (spec approved 16 Oct), 98 commits and 548 automated tests.

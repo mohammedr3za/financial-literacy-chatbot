@@ -257,6 +257,7 @@ Caution: any fix must be checked on *new* problems, not these 30, or the score m
   - Regulatory is the weakest kind for both models (8B 7/12).
   - Results: results/lambda_fresh27b/fresh.jsonl. The GPU was terminated at 14:20 (about $3). It idled about an hour because the Mac went into clamshell sleep on battery.
 - 2026-10-21 laptop CA run: finbot-8b-v4 Q5_K_M on Ollama on the MacBook (M5, 16 GB), current code, 1 worker.
-  - CA **78/97 (80%)**, the same score as this GGUF on the A100 (v4.1 retest 78/97). Median 74 s, p90 155 s.
+  - CA **78/97 (80%)**, the same score as this GGUF on the A100 (v4.1 retest 78/97).
+  - Timing: the 37 questions answered awake and on AC (rows 61–97) took a median of 66 s, p90 143 s. Rows 1–60 ran during clamshell sleep, so the all-97 median of 74 s is inflated.
   - Running locally costs no accuracy, only speed.
   - Results: results/laptop_ca/ca.jsonl. Poster numbers: docs/poster.md.
