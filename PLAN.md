@@ -260,4 +260,13 @@ Caution: any fix must be checked on *new* problems, not these 30, or the score m
   - CA **78/97 (80%)**, the same score as this GGUF on the A100 (v4.1 retest 78/97).
   - Timing: the 37 questions answered awake and on AC (rows 61–97) took a median of 66 s, p90 143 s. Rows 1–60 ran during clamshell sleep, so the all-97 median of 74 s is inflated.
   - Running locally costs no accuracy, only speed.
+- 2026-10-22 follow-up fix, from site report dd81798ad52f ("Follow up is slightly bad, better to have a cache memory"):
+  - Root cause: "What are exactly these risks" after a goal calculation inherited the `goal_saving` route. The reviewer demanded the calculator, and the bot answered "I could not compute this reliably".
+  - Fix:
+    - A question about the previous answer, with no number of its own, is routed on its own words.
+    - A conversation scratchpad of all earlier calculator inputs and results is shown to the model each turn and accepted by the reviewer.
+  - Tests: `uv run pytest`, 560 passed, including the 12 new ones in tests/test_followup_memory.py.
+  - Live replay of the reported conversation on finbot-blond.vercel.app (finbot-8b-v4 on the Mac):
+    - Turn 2 now lists market, inflation, liquidity and reinvestment risk for the ₹1 crore / 15-year / 12% plan.
+    - Review passed, with no fallback.
   - Results: results/laptop_ca/ca.jsonl. Poster numbers: docs/poster.md.
