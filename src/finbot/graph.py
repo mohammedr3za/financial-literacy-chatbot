@@ -233,19 +233,21 @@ def not_reliable(question: str) -> str:
     return f"{local}\n\n{NOT_RELIABLE}" if local else NOT_RELIABLE
 
 
-def unverified_figures(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict) -> list[str]:
+def unverified_figures(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict,
+                       known: str = "") -> list[str]:
     """Figures in a calculation answer that are not in the question (no successful tool call) or not in the evidence
-    (question, sources, tool results)."""
+    (question, sources, tool results). known: calculator results from earlier turns, which an answer may restate."""
     if not (flags.get("calculation_intent") or flags.get("calc_types")):
         return []
     text = _strip_math_markup(answer)
+    extra = f"\n{known}" if known else ""
     if not tools_used:   # with no calculator, only figures restated exactly from the question may appear ($950 is not 9.50%)
-        return unsupported_figures(text, question, plain_numbers=True, scale_variants=False)
-    return unsupported_figures(text, evidence, rel_tol=0.005, plain_numbers=True)
+        return unsupported_figures(text, question + extra, plain_numbers=True, scale_variants=False)
+    return unsupported_figures(text, evidence + extra, rel_tol=0.005, plain_numbers=True)
 
 
-def fabricated_figures(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict) -> bool:
-    return bool(unverified_figures(answer, question, evidence, tools_used, flags))
+def fabricated_figures(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict, known: str = "") -> bool:
+    return bool(unverified_figures(answer, question, evidence, tools_used, flags, known))
 
 
 MIN_PRUNED_CHARS = 200
@@ -306,17 +308,17 @@ def calculation_question(flags: dict, question: str) -> bool:
     return bool(flags.get("calculation_intent")) and len(re.findall(r"\d+(?:[.,]\d+)*", plain)) >= 3
 
 
-def without_unverified(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict) -> str:
+def without_unverified(answer: str, question: str, evidence: str, tools_used: list[str], flags: dict, known: str = "") -> str:
     """The final answer after a failed revision, with no unverified figure (SPEC 3.1). A recognised calculation gets the
     number-free fallback when no tool (or the wrong one) gave its key figures; with the right tool, only the sentences
     with unverified figures go, if a figure is left. A question that only sounds like a calculation (a scam
     check, "can this coin 10x"), or an answer that asks for missing inputs, loses only the sentences with unverified
     figures, if enough verified text is left."""
-    bad = unverified_figures(answer, question, evidence, tools_used, flags)
+    bad = unverified_figures(answer, question, evidence, tools_used, flags, known)
     if not bad:
         return answer
     pruned = prune_figures(_strip_math_markup(answer), bad)
-    clean = not unverified_figures(pruned, question, evidence, tools_used, flags)
+    clean = not unverified_figures(pruned, question, evidence, tools_used, flags, known)
     if not calculation_question(flags, question) or asks_for_inputs(answer):   # a request for inputs shows no result
         if len(pruned) >= MIN_PRUNED_CHARS and clean:
             return pruned
@@ -460,6 +462,36 @@ def history_messages(turns: list[dict], answer_chars: int | None = None) -> list
     return out
 
 
+SCRATCHPAD_CHARS = 1500
+
+
+def _key_figures(result: str, limit: int = 6) -> str:
+    """'monthly_required ₹19,818.62; total_invested ₹35,67,351.60' from a tool result: its formatted values, else its numbers."""
+    try:
+        out = json.loads(result)
+    except (TypeError, ValueError):
+        return ""
+    if not isinstance(out, dict):
+        return ""
+    shown = out.get("formatted") if isinstance(out.get("formatted"), dict) else {}
+    items = [(k, v) for k, v in shown.items() if not k.endswith("_short")]
+    if not items and isinstance(out.get("result"), dict):
+        items = [(k, v) for k, v in out["result"].items() if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    return "; ".join(f"{k} {v}" for k, v in items[:limit])
+
+
+def scratchpad(turns: list[dict], max_chars: int = SCRATCHPAD_CHARS) -> str:
+    """Every calculator input and key result from the earlier turns of a conversation (site report dd81798ad52f). The
+    model sees it each turn, so a follow-up can use any earlier calculation, not only the last 2 turns; the oldest lines
+    go first when it gets long."""
+    lines = [f"- Turn {n}: {inputs_line([tc])}" + (f" -> {figs}" if (figs := _key_figures(res)) else "")
+             for n, t in enumerate(turns, 1) for tc, res in zip(t["calls"], t["results"])]
+    head = "Verified calculator results from earlier in this conversation (reuse these exact figures if the user refers back to them):"
+    while lines and len(head) + sum(len(x) + 1 for x in lines) > max_chars:
+        lines.pop(0)
+    return "\n".join([head, *lines]) if lines else ""
+
+
 def is_context_overflow(exc: Exception) -> bool:
     return bool(_OVERFLOW.search(str(exc)))
 
@@ -544,10 +576,11 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
         msgs, qi = state["messages"], state["question_idx"]
 
         turns = earlier_turns(msgs[:qi])
+        memo = scratchpad(turns)
 
         def ctx_for(sources) -> HumanMessage:
             return HumanMessage(context_block(text_of(msgs[qi]), state["flags"], state.get("redactions", []), sources,
-                                              state.get("rag_status", "")))
+                                              state.get("rag_status", ""), memory=memo))
 
         def model_input(trim: bool) -> list:
             """System prompt + at most the last 2 earlier turns as plain Q/A text + the current turn, within the budget.
@@ -679,10 +712,11 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
             if draft is not None and script_damaged(text_of(draft), answer):
                 answer, restored = text_of(draft), True
         srcs = state.get("sources", [])
-        prev = earlier_turns(msgs[:qi])[-1:]     # a follow-up may quote the previous turn's question and tool results
+        earlier = earlier_turns(msgs[:qi])     # a follow-up may quote any earlier question and calculator result
         evidence = "\n".join([text_of(msgs[qi])] + [x["text"] for x in srcs]
                              + [m.content for m in turn if isinstance(m, ToolMessage)]
-                             + [p["question"] + "\n" + "\n".join(p["results"]) for p in prev])
+                             + [p["question"] + "\n" + "\n".join(p["results"]) for p in earlier])
+        known = "\n".join(r for p in earlier for r in p["results"])   # already verified: may be restated without a new call
         result = review_answer(answer, state["flags"], tools_used, len(srcs), tuple(x.get("url", "") for x in srcs), evidence)
         prior = state.get("review", {}).get("first_draft_codes", [])
         if result.passed:
@@ -699,7 +733,7 @@ def build_graph(model=None, kb: Any = "auto", settings: Settings | None = None, 
             answer = cut_hypothetical(answer)
         if "unverified_helpline" in result.codes:
             answer = prune_figures(answer, unverified_numbers(answer, evidence))
-        checked = without_unverified(answer, text_of(msgs[qi]), evidence, tools_used, state["flags"])
+        checked = without_unverified(answer, text_of(msgs[qi]), evidence, tools_used, state["flags"], known)
         if checked != answer:
             answer = checked
         elif not answer.strip():   # the model gave up after the reviewer note: say so instead of showing only the footer

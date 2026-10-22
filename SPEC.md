@@ -375,3 +375,14 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
   - `FINBOT_FALLBACK_MODEL=none`, so the base `qwen3:8b` is never used.
   - `FINBOT_CHATLOG=0`: no conversations are logged. Section 7.4 logging and its visitor notice apply only when logging is on.
   - There is no per-visitor chat cap. Only the abuse limits stay: 10 questions a minute per IP and 25 turns per conversation.
+- 2026-10-22: Follow-up fix, from site report dd81798ad52f ("Follow up is slightly bad, better to have a cache memory"). The user said "fix it by having a cache or scratch pad in the back".
+  - **Root cause:** a short follow-up about the previous answer ("What are exactly these risks") was routed together with the previous question.
+    - It therefore inherited that question's calculation (`goal_saving`).
+    - The reviewer then demanded the calculator, and the answer fell back to "I could not compute this reliably".
+  - **Routing:** a follow-up with no number of its own that asks about the answer is routed on its own words. This covers what/why/explain wording, risks, safety, losses, meaning, examples and guarantees.
+    - Follow-ups that change or ask for a number keep the previous route ("What if I already have ₹5 lakh saved?").
+  - **Conversation scratchpad:** every calculator input and key result from all earlier turns is shown to the model each turn.
+    - The oldest entries are dropped once it passes 1,500 characters.
+    - A follow-up can therefore use any earlier calculation, not only the last 2 turns.
+    - The reviewer's evidence holds all earlier turns.
+    - An answer may restate an already-verified figure from them even when the current turn calls no calculator.

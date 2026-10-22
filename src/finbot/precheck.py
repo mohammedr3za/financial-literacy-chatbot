@@ -158,6 +158,9 @@ _FOLLOWUP_OPENER = re.compile(r"(?i)^\s*(what if|and if|how about|what about|ins
                               r"would it|could i|can i|what would)\b")
 _FOLLOWUP_MARKER = re.compile(r"(?i)\b(instead|already|only|as well|too|same)\b")
 _PRONOUN = re.compile(r"(?i)\b(this|that|it|these|those)\b")
+# a follow-up that asks about the previous answer rather than for a new figure (site report dd81798ad52f)
+_ABOUT_ANSWER = re.compile(r"(?i)\b(risks?|risky|safe(ty)?|lose|losses?|why|mean(s|ing)?|explain|elaborate|in detail|"
+                           r"tell me more|examples?|guarantee[sd]?)\b")
 
 
 def is_followup(text: str) -> bool:
@@ -172,7 +175,11 @@ def precheck(user_text: str, previous_question: str | None = None) -> PrecheckRe
     has_number = has_quantity(clean)
     statement = bool(_STATEMENT.search(clean) or _CORPORATE.search(clean)) and has_number or is_tabular(clean)
     followup = bool(previous_question) and is_followup(clean)
-    routed_text = f"{redact(previous_question)[0]} {clean}" if followup else clean
+    context_text = f"{redact(previous_question)[0]} {clean}" if followup else clean
+    # "What are these risks?" after a goal calculation asks about the answer, not for the calculation again: it is routed
+    # on its own words. A follow-up with a number, or a what-if without one, keeps the previous route (SPEC 2026-10-22).
+    about_answer = followup and not has_number and bool(_CONCEPT.search(clean) or _ABOUT_ANSWER.search(clean))
+    routed_text = clean if about_answer else context_text
     calc_types = detect_calc_types(routed_text, has_quantity(routed_text), statement)
     if "project" in calc_types or (
             {"npv_irr", "eac", "perpetuity"} & set(calc_types) and not (_CORPORATE.search(clean) or _STATEMENT_DOC.search(clean))):
@@ -183,8 +190,8 @@ def precheck(user_text: str, previous_question: str | None = None) -> PrecheckRe
         statement = False          # several numbered lines ("Note: give 2 decimals, for example 45.67") are not a pasted statement
         calc_types = [k for k in calc_types if k != "statement"]
     # a follow-up keeps the previous question's currency ("what if the rate were 9%?" after a $ question)
-    usd = bool(re.search(r"\$\s?\d|\bUSD\b|\bdollars?\b", routed_text, re.I)) and not re.search(
-        r"₹|\brs\.?\s?\d|\binr\b|rupee|lakh|crore", routed_text, re.I)
+    usd = bool(re.search(r"\$\s?\d|\bUSD\b|\bdollars?\b", context_text, re.I)) and not re.search(
+        r"₹|\brs\.?\s?\d|\binr\b|rupee|lakh|crore", context_text, re.I)
     flags = {
         "currency": "USD" if usd else "INR",
         "followup": followup and bool(calc_types),   # only calculation follow-ups get the "reuse the numbers" note

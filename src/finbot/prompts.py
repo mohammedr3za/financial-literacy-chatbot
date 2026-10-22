@@ -30,7 +30,9 @@ _FLAG_NOTES = {
 }
 
 
-def context_block(question: str, flags: dict, redactions: list[str], sources: list[dict], rag_status: str) -> str:
+def context_block(question: str, flags: dict, redactions: list[str], sources: list[dict], rag_status: str,
+                  memory: str = "") -> str:
+    """memory: the conversation scratchpad of earlier calculator inputs and results (graph.scratchpad)."""
     lines = ["[Context for this question, prepared by the system and not written by the user]", "Pre-check notes:"]
     notes = [msg for key, msg in _FLAG_NOTES.items() if key != "currency" and flags.get(key)]
     if flags.get("currency") == "USD":
@@ -48,5 +50,7 @@ def context_block(question: str, flags: dict, redactions: list[str], sources: li
         lines.append("Sources: none (document search is switched off for this run). Do not cite sources.")
     else:
         lines.append("Sources: no relevant source was found. Do not cite sources. For Indian rules, tax or product facts, say you cannot verify them.")
+    if memory:
+        lines.append(memory)
     lines.append(f"\nUser question:\n{question}")
     return "\n".join(lines)
