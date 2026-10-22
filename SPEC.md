@@ -370,3 +370,8 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
     - `calculate` accepts ₹/$/Rs., ×, ÷, the Unicode minus and "8%" (= 8/100). It answers an equation or an unknown letter with "use solve_equation", and a ratio "a : b" with "compute each part".
   - **Hints:** two projects with NPV and IRR (one `npv_irr` call per project; the crossover rate is the IRR of the difference) and a bond's effective annual yield (`effective_annual_rate` on the YTM).
   - **KB:** official sources for 1930 / cybercrime.gov.in, the SCSS and PPF limits, and SEBI's F&O loss study. Fraud questions in everyday words ("tricked", "money is gone", धोखाधड़ी) also search for the official terms (cyber fraud, helpline, reporting portal); before this, no retrieved chunk had 1930.
+- 2026-10-22: The user said "launch the 8b model local, on https://finbot-blond.vercel.app" and "keep everything free, we arent training anything".
+  - The public site runs on the Mac: `finbot-8b-v4` on Ollama, behind a Cloudflare quick tunnel.
+  - `FINBOT_FALLBACK_MODEL=none`, so the base `qwen3:8b` is never used.
+  - `FINBOT_CHATLOG=0`: no conversations are logged. Section 7.4 logging and its visitor notice apply only when logging is on.
+  - There is no per-visitor chat cap. Only the abuse limits stay: 10 questions a minute per IP and 25 turns per conversation.

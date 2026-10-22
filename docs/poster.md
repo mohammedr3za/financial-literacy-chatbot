@@ -146,7 +146,7 @@ Callouts:
 - **It cannot see your account.** It doesn't do balances, card blocking or payments.
 
 ### Panel H: "Try it"
-- A QR code to the live bot, with 3 free chats per visitor.
+- A QR code to the live bot. It is free, with no sign-up, and chats are not recorded.
 - Suggested prompts:
   - "What is the EMI on a ₹25 lakh home loan at 9% for 15 years?"
   - "Someone asked for my OTP for KYC, should I share it?"

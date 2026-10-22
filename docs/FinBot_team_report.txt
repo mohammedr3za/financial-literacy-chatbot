@@ -378,15 +378,19 @@ Lessons learned (please follow these for any GPU run)
 11. OPEN ITEMS BEFORE THE EXHIBITION
 ------------------------------------------------------------------------------------------
 
-  1. Confirm the QR code address on the poster: finbot-blond.vercel.app.
-  2. Add the visitor notice on the site before the public uses it. Chats are logged
-     (SPEC 7.4), and the spec requires a notice before any public use.
+  1. DONE 22 Oct: the poster's QR code goes to finbot-blond.vercel.app. The site now runs the
+     small model (v4) from the MacBook.
+  2. DONE 22 Oct: no visitor notice is needed. Chats are not logged (FINBOT_CHATLOG=0;
+     "we aren't training anything"), and there is no per-visitor cap. The only limits are
+     10 questions a minute and 25 turns per conversation.
   3. Add team names to the poster byline if wanted. It currently says "Made by the
      exhibition team".
-  4. Decide what runs at the booth:
-       big model on a rented A100     best answers, about Rs 1,500 per 8-hour day
-       small model on a rented GPU    cheaper per answer, 72 vs 90 on the blind test
-       small model on the MacBook     free and offline, but about a minute per answer
+  4. DONE 22 Oct: the booth runs the small model on the MacBook.
+     - It is free, but takes about a minute per answer; the first question after a pause is
+       slower while the model loads.
+     - It answers one question at a time, so visitors queue.
+     - Keep the Mac plugged in with the lid open. Switching to the big model needs a rented
+       A100 (about Rs 1,500 per 8-hour day).
   5. Optional: test ChatGPT and Claude on the same 97 CA questions. It needs API keys and
      about $5-10, or someone can paste 20 questions into the free apps by hand.
   6. M8 is still open: CA is at 80% against 85%, and McGraw at 18-20 against 24/34.
@@ -416,6 +420,15 @@ Lessons learned (please follow these for any GPU run)
     train/out_v5/              v5 model files (GGUF, LoRA) and the training log
     kb/raw, kb/index           source documents and the search index
 
+  Run the public site from the MacBook (finbot-blond.vercel.app -> tunnel -> this Mac):
+    FINBOT_MODEL=finbot-8b-v4 FINBOT_FALLBACK_MODEL=none FINBOT_COMPACT_TOOLS=on \
+      FINBOT_THINKING=off FINBOT_CHATLOG=0 bash deploy/local_backend.sh
+    This starts the API, opens a new tunnel, points the site at it and redeploys. Run it
+    again after any restart or sleep, because the tunnel address changes.
+  Check it:   curl https://finbot-blond.vercel.app/api/health
+              (should say "online": true, "model": "finbot-8b-v4")
+  Stop it:    pkill -f "uvicorn finbot.api"; pkill -f "cloudflared tunnel --no-autoupdate"
+
   Rebuild the poster after new results:
     uv run --no-project --with qrcode python -I results/poster/build_poster.py
   Then open the HTML in Chrome, choose Print, then Save as PDF (it picks A1 automatically).
@@ -437,3 +450,7 @@ Lessons learned (please follow these for any GPU run)
   Exchange rate          https://wise.com/us/currency-converter/usd-to-inr-rate
   Electricity tariff     https://www.globalpetrolprices.com/India/electricity_prices/
   Bank-scale and regulation   docs/cost_and_value.md (its own source list)
+
+
+
+
