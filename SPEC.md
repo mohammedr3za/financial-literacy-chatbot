@@ -386,3 +386,7 @@ visitor's phone → Vercel (static page + /api/chat proxy with secret token) →
     - A follow-up can therefore use any earlier calculation, not only the last 2 turns.
     - The reviewer's evidence holds all earlier turns.
     - An answer may restate an already-verified figure from them even when the current turn calls no calculator.
+- 2026-10-26: The user said "launch 27b model on lambda, i need to present it today, on the website just say lambda dont mention 27b anywhere".
+  - The public site runs Qwen3.6-27B on a Lambda A100 again (vLLM 0.31.0, `deploy/gpu_model.sh` and `deploy/gpu_backend.sh`).
+  - vLLM serves it under the neutral name `finbot` (`FINBOT_MODEL=finbot`). The site badge reads "Lambda", answers read "finbot · n s", and the site's code no longer names the 27B.
+  - As on 2026-10-22: `FINBOT_CHATLOG=0`, no per-visitor cap, and the GPU is terminated by a watchdog.

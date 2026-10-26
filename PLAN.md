@@ -270,3 +270,8 @@ Caution: any fix must be checked on *new* problems, not these 30, or the score m
     - Turn 2 now lists market, inflation, liquidity and reinvestment risk for the ₹1 crore / 15-year / 12% plan.
     - Review passed, with no fallback.
   - Results: results/laptop_ca/ca.jsonl. Poster numbers: docs/poster.md.
+- 2026-10-26: Public site back on Qwen3.6-27B on a Lambda A100 for the presentation (SPEC changelog 2026-10-26).
+  - Instance finbot-site, asia-south-1, launched 14:02 IST. Detached setup (vLLM 0.31.0) reached VLLM UP / API UP / tunnel at 14:25.
+  - Served as `finbot`: `curl https://finbot-blond.vercel.app/api/health` returns `{"online":true,"host":"cloud","model":"finbot"}`. The live page and app.js have 0 matches for "27b" or "qwen3.6".
+  - Live check through the site: "EMI on a ₹25 lakh home loan at 9% for 15 years?" gave ₹25,356.66 in 17.4 s, served_by "finbot".
+  - Chat logging off (`FINBOT_CHATLOG=0`). Terminated at 22:00 IST by two watchdogs, one on the Mac and one on the box. `uv run pytest`: 560 passed.

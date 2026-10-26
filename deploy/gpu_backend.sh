@@ -29,7 +29,7 @@ pkill -f "uvicorn finbot.api" 2>/dev/null || true
 cat > ~/start_api.sh <<EOS
 #!/usr/bin/env bash
 cd ~/finbot
-export FINBOT_BACKEND=openai FINBOT_BASE_URL=http://127.0.0.1:8000/v1 FINBOT_MODEL=qwen3.6-27b FINBOT_FALLBACK_MODEL=none \
+export FINBOT_BACKEND=openai FINBOT_BASE_URL=http://127.0.0.1:8000/v1 FINBOT_MODEL=finbot FINBOT_FALLBACK_MODEL=none FINBOT_CHATLOG=0 \
        FINBOT_EMBED_URL=http://127.0.0.1:11434 FINBOT_API_TOKEN=$FINBOT_API_TOKEN FINBOT_THINKING=off
 exec ~/.local/bin/uv run uvicorn finbot.api:app --host 127.0.0.1 --port 8080 --workers 1
 EOS
