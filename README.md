@@ -58,6 +58,7 @@ uv run python -m finbot.cli --acceptance  # the 6 acceptance prompts on the real
 6. Build the report: `uv run python bench/report.py results/finbot-*.jsonl`. It goes to `bench/report/report.md`.
 
 ## Licenses
+- FinBot's code: MIT License, see [`LICENSE`](LICENSE). The documents in `kb/raw/` are not included in this repository; `kb/sources.csv` lists where to download each one.
 - OpenStax *Principles of Finance 2e*: CC BY-NC-SA 4.0 (attribution, non-commercial).
 - Regulator documents: public government publications.
 - Models: Qwen3-8B (Apache-2.0) and bge-m3 (MIT).
